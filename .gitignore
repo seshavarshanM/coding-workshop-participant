@@ -156,9 +156,9 @@ dmypy.json
 cython_debug/
 
 # PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  JetBrains specific template is maintained in a separate JetBrains.gnore that can
+#  be found at https://github.com/github/gnore/blob/main/Global/JetBrains.gnore
+#  and can be added to the global gnore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
@@ -256,3 +256,12 @@ tfplan
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .github/instructions/snyk_rules.instructions.md
+
+# Python packaged dependencies (installed locally for Lambda builds)
+backend/*/psycopg*/
+backend/*/psycopg-*.dist-info/
+backend/*/psycopg_binary*/
+backend/*/.pip_installed
+
+# Local zip exports
+*.zip

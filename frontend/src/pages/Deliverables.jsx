@@ -47,6 +47,7 @@ export default function Deliverables() {
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
+  const [touched, setTouched] = useState({})
 
   useEffect(() => {
     projectService.getAll().then(setProjects).catch(() => {})
@@ -68,12 +69,27 @@ export default function Deliverables() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => setDialog({ open: true, mode: 'create', data: EMPTY })
-  const openEdit   = (d) => setDialog({
+  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY }) }
+  const openEdit   = (d) => { setTouched({}); setDialog({
     open: true, mode: 'edit',
     data: { ...d, due_date: d.due_date?.split('T')[0] || '' }
-  })
+  }) }
   const closeDialog = () => setDialog(d => ({ ...d, open: false }))
+
+  // ── Validation ──────────────────────────────────────────────
+  const validate = (d) => {
+    const errs = {}
+    if (!d.name?.trim()) errs.name = 'Deliverable name is required'
+    if (!d.project_id) errs.project_id = 'Project is required'
+    if (!d.due_date) errs.due_date = 'Due date is required'
+    if (!d.assigned_to?.trim()) errs.assigned_to = 'Assignee is required'
+    if (d.completion_percentage !== '' && (Number(d.completion_percentage) < 0 || Number(d.completion_percentage) > 100))
+      errs.completion_percentage = 'Must be between 0 and 100'
+    return errs
+  }
+  const errors = validate(dialog.data)
+  const isValid = Object.keys(errors).length === 0
+  const showErr = (field) => touched[field] && errors[field]
 
   const handleSave = async () => {
     setSaving(true)
@@ -111,8 +127,10 @@ export default function Deliverables() {
     }
   }
 
-  const f = (field) => (e) =>
+  const f = (field) => (e) => {
+    setTouched(t => ({ ...t, [field]: true }))
     setDialog(d => ({ ...d, data: { ...d.data, [field]: e.target.value } }))
+  }
 
   return (
     <Box>
@@ -212,16 +230,16 @@ export default function Deliverables() {
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ pt: 0.5 }}>
             <Grid item xs={12}>
-              <TextField fullWidth label="Name *" value={dialog.data.name} onChange={f('name')} />
+              <TextField fullWidth label="Name *" value={dialog.data.name} onChange={f('name')}
+                error={!!showErr('name')} helperText={showErr('name') || ''} />
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth multiline rows={2} label="Description" value={dialog.data.description} onChange={f('description')} />
             </Grid>
             <Grid item xs={12}>
-              <FormControl fullWidth>
-                <InputLabel>Project</InputLabel>
-                <Select label="Project" value={dialog.data.project_id} onChange={f('project_id')}>
-                  <MenuItem value="">None</MenuItem>
+              <FormControl fullWidth error={!!showErr('project_id')}>
+                <InputLabel>Project *</InputLabel>
+                <Select label="Project *" value={dialog.data.project_id} onChange={f('project_id')}>
                   {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                 </Select>
               </FormControl>
@@ -237,19 +255,22 @@ export default function Deliverables() {
               </FormControl>
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="date" label="Due date" value={dialog.data.due_date} onChange={f('due_date')} InputLabelProps={{ shrink: true }} />
+              <TextField fullWidth type="date" label="Due date *" value={dialog.data.due_date} onChange={f('due_date')} InputLabelProps={{ shrink: true }}
+                error={!!showErr('due_date')} helperText={showErr('due_date') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Assigned to" value={dialog.data.assigned_to} onChange={f('assigned_to')} />
+              <TextField fullWidth label="Assigned to *" value={dialog.data.assigned_to} onChange={f('assigned_to')}
+                error={!!showErr('assigned_to')} helperText={showErr('assigned_to') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }} />
+              <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }}
+                error={!!showErr('completion_percentage')} helperText={showErr('completion_percentage') || ''} />
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={closeDialog} sx={{ textTransform: 'none' }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving || !dialog.data.name}
+          <Button variant="contained" onClick={handleSave} disabled={saving || !isValid}
             sx={{ textTransform: 'none', fontWeight: 600 }}>
             {saving ? 'Saving…' : dialog.mode === 'create' ? 'Create' : 'Save'}
           </Button>

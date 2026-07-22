@@ -60,6 +60,7 @@ export default function Budget() {
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
+  const [touched, setTouched] = useState({})
 
   useEffect(() => {
     projectService.getAll().then(setProjects).catch(() => {})
@@ -80,12 +81,27 @@ export default function Budget() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => setDialog({ open: true, mode: 'create', data: EMPTY })
-  const openEdit   = (e) => setDialog({
+  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY }) }
+  const openEdit   = (e) => { setTouched({}); setDialog({
     open: true, mode: 'edit',
     data: { ...e, entry_date: e.entry_date?.split('T')[0] || '' }
-  })
+  }) }
   const closeDialog = () => setDialog(d => ({ ...d, open: false }))
+
+  // ── Validation ──────────────────────────────────────────────
+  const validate = (d) => {
+    const errs = {}
+    if (!d.project_id) errs.project_id = 'Project is required'
+    if (!d.category) errs.category = 'Category is required'
+    if (d.planned_amount === '' || d.planned_amount === null) errs.planned_amount = 'Planned amount is required'
+    else if (Number(d.planned_amount) < 0) errs.planned_amount = 'Cannot be negative'
+    if (d.actual_amount !== '' && Number(d.actual_amount) < 0) errs.actual_amount = 'Cannot be negative'
+    if (!d.entry_date) errs.entry_date = 'Date is required'
+    return errs
+  }
+  const errors = validate(dialog.data)
+  const isValid = Object.keys(errors).length === 0
+  const showErr = (field) => touched[field] && errors[field]
 
   const handleSave = async () => {
     setSaving(true)
@@ -122,8 +138,10 @@ export default function Budget() {
     }
   }
 
-  const f = (field) => (e) =>
+  const f = (field) => (e) => {
+    setTouched(t => ({ ...t, [field]: true }))
     setDialog(d => ({ ...d, data: { ...d.data, [field]: e.target.value } }))
+  }
 
   const entries = data.entries || []
   const summary = data.summary || { total_planned: 0, total_actual: 0 }
@@ -267,10 +285,9 @@ export default function Budget() {
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ pt: 0.5 }}>
             <Grid item xs={12}>
-              <FormControl fullWidth>
-                <InputLabel>Project</InputLabel>
-                <Select label="Project" value={dialog.data.project_id} onChange={f('project_id')}>
-                  <MenuItem value="">None</MenuItem>
+              <FormControl fullWidth error={!!showErr('project_id')}>
+                <InputLabel>Project *</InputLabel>
+                <Select label="Project *" value={dialog.data.project_id} onChange={f('project_id')}>
                   {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                 </Select>
               </FormControl>
@@ -284,22 +301,25 @@ export default function Budget() {
               </FormControl>
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="date" label="Date" value={dialog.data.entry_date} onChange={f('entry_date')} InputLabelProps={{ shrink: true }} />
+              <TextField fullWidth type="date" label="Date *" value={dialog.data.entry_date} onChange={f('entry_date')} InputLabelProps={{ shrink: true }}
+                error={!!showErr('entry_date')} helperText={showErr('entry_date') || ''} />
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth label="Description" value={dialog.data.description} onChange={f('description')} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="number" label="Planned amount ($)" value={dialog.data.planned_amount} onChange={f('planned_amount')} inputProps={{ min: 0 }} />
+              <TextField fullWidth type="number" label="Planned amount ($) *" value={dialog.data.planned_amount} onChange={f('planned_amount')} inputProps={{ min: 0 }}
+                error={!!showErr('planned_amount')} helperText={showErr('planned_amount') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="number" label="Actual amount ($)" value={dialog.data.actual_amount} onChange={f('actual_amount')} inputProps={{ min: 0 }} />
+              <TextField fullWidth type="number" label="Actual amount ($)" value={dialog.data.actual_amount} onChange={f('actual_amount')} inputProps={{ min: 0 }}
+                error={!!showErr('actual_amount')} helperText={showErr('actual_amount') || ''} />
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={closeDialog} sx={{ textTransform: 'none' }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving}
+          <Button variant="contained" onClick={handleSave} disabled={saving || !isValid}
             sx={{ textTransform: 'none', fontWeight: 600 }}>
             {saving ? 'Saving…' : dialog.mode === 'create' ? 'Create' : 'Save'}
           </Button>

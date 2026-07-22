@@ -51,6 +51,7 @@ export default function Projects() {
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
+  const [touched, setTouched] = useState({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -68,12 +69,35 @@ export default function Projects() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => setDialog({ open: true, mode: 'create', data: EMPTY_FORM })
-  const openEdit   = (p) => setDialog({
+  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY_FORM }) }
+  const openEdit   = (p) => { setTouched({}); setDialog({
     open: true, mode: 'edit',
     data: { ...p, start_date: p.start_date?.split('T')[0] || '', end_date: p.end_date?.split('T')[0] || '' }
-  })
+  }) }
   const closeDialog = () => setDialog(d => ({ ...d, open: false }))
+
+  // ── Validation ──────────────────────────────────────────────
+  const validate = (d) => {
+    const errs = {}
+    if (!d.name?.trim()) errs.name = 'Project name is required'
+    if (!d.manager?.trim()) errs.manager = 'Manager is required'
+    if (!d.department?.trim()) errs.department = 'Department is required'
+    if (!d.start_date) errs.start_date = 'Start date is required'
+    if (!d.end_date) errs.end_date = 'End date is required'
+    if (d.start_date && d.end_date && d.end_date <= d.start_date)
+      errs.end_date = 'End date must be after start date'
+    if (d.budget_planned === '' || d.budget_planned === null)
+      errs.budget_planned = 'Planned budget is required'
+    else if (Number(d.budget_planned) < 0)
+      errs.budget_planned = 'Budget cannot be negative'
+    if (d.completion_percentage !== undefined && d.completion_percentage !== '' &&
+        (Number(d.completion_percentage) < 0 || Number(d.completion_percentage) > 100))
+      errs.completion_percentage = 'Must be between 0 and 100'
+    return errs
+  }
+  const errors = validate(dialog.data)
+  const isValid = Object.keys(errors).length === 0
+  const showErr = (field) => touched[field] && errors[field]
 
   const handleSave = async () => {
     setSaving(true)
@@ -105,9 +129,10 @@ export default function Projects() {
     }
   }
 
-  const f = (field) => (e) =>
+  const f = (field) => (e) => {
+    setTouched(t => ({ ...t, [field]: true }))
     setDialog(d => ({ ...d, data: { ...d.data, [field]: e.target.value } }))
-
+  }
   return (
     <Box>
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -223,7 +248,8 @@ export default function Projects() {
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ pt: 0.5 }}>
             <Grid item xs={12}>
-              <TextField fullWidth label="Project name *" value={dialog.data.name} onChange={f('name')} />
+              <TextField fullWidth label="Project name *" value={dialog.data.name} onChange={f('name')}
+                error={!!showErr('name')} helperText={showErr('name') || ''} />
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth multiline rows={2} label="Description" value={dialog.data.description} onChange={f('description')} />
@@ -249,30 +275,36 @@ export default function Projects() {
               </FormControl>
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Department" value={dialog.data.department} onChange={f('department')} />
+              <TextField fullWidth label="Department *" value={dialog.data.department} onChange={f('department')}
+                error={!!showErr('department')} helperText={showErr('department') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Manager" value={dialog.data.manager} onChange={f('manager')} />
+              <TextField fullWidth label="Manager *" value={dialog.data.manager} onChange={f('manager')}
+                error={!!showErr('manager')} helperText={showErr('manager') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="date" label="Start date" value={dialog.data.start_date} onChange={f('start_date')} InputLabelProps={{ shrink: true }} />
+              <TextField fullWidth type="date" label="Start date *" value={dialog.data.start_date} onChange={f('start_date')} InputLabelProps={{ shrink: true }}
+                error={!!showErr('start_date')} helperText={showErr('start_date') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="date" label="End date" value={dialog.data.end_date} onChange={f('end_date')} InputLabelProps={{ shrink: true }} />
+              <TextField fullWidth type="date" label="End date *" value={dialog.data.end_date} onChange={f('end_date')} InputLabelProps={{ shrink: true }}
+                error={!!showErr('end_date')} helperText={showErr('end_date') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="number" label="Budget planned ($)" value={dialog.data.budget_planned} onChange={f('budget_planned')} />
+              <TextField fullWidth type="number" label="Budget planned ($) *" value={dialog.data.budget_planned} onChange={f('budget_planned')} inputProps={{ min: 0 }}
+                error={!!showErr('budget_planned')} helperText={showErr('budget_planned') || ''} />
             </Grid>
             {dialog.mode === 'edit' && (
               <Grid item xs={6}>
-                <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }} />
+                <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }}
+                  error={!!showErr('completion_percentage')} helperText={showErr('completion_percentage') || ''} />
               </Grid>
             )}
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={closeDialog} sx={{ textTransform: 'none' }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving || !dialog.data.name}
+          <Button variant="contained" onClick={handleSave} disabled={saving || !isValid}
             sx={{ textTransform: 'none', fontWeight: 600 }}>
             {saving ? 'Saving…' : dialog.mode === 'create' ? 'Create' : 'Save'}
           </Button>

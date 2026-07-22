@@ -48,6 +48,7 @@ export default function Resources() {
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
+  const [touched, setTouched] = useState({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -64,9 +65,24 @@ export default function Resources() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => setDialog({ open: true, mode: 'create', data: EMPTY })
-  const openEdit   = (r) => setDialog({ open: true, mode: 'edit', data: { ...r } })
+  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY }) }
+  const openEdit   = (r) => { setTouched({}); setDialog({ open: true, mode: 'edit', data: { ...r } }) }
   const closeDialog = () => setDialog(d => ({ ...d, open: false }))
+
+  // ── Validation ──────────────────────────────────────────────
+  const validate = (d) => {
+    const errs = {}
+    if (!d.name?.trim()) errs.name = 'Name is required'
+    if (!d.role?.trim()) errs.role = 'Role is required'
+    if (!d.department?.trim()) errs.department = 'Department is required'
+    if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) errs.email = 'Invalid email format'
+    if (d.capacity_hours === '' || Number(d.capacity_hours) < 1) errs.capacity_hours = 'Capacity must be at least 1 hour'
+    if (Number(d.allocated_hours) < 0) errs.allocated_hours = 'Cannot be negative'
+    return errs
+  }
+  const errors = validate(dialog.data)
+  const isValid = Object.keys(errors).length === 0
+  const showErr = (field) => touched[field] && errors[field]
 
   const handleSave = async () => {
     setSaving(true)
@@ -98,8 +114,10 @@ export default function Resources() {
     }
   }
 
-  const f = (field) => (e) =>
+  const f = (field) => (e) => {
+    setTouched(t => ({ ...t, [field]: true }))
     setDialog(d => ({ ...d, data: { ...d.data, [field]: e.target.value } }))
+  }
 
   const overAllocated = items.filter(r => Number(r.allocated_hours) > Number(r.capacity_hours))
 
@@ -237,18 +255,24 @@ export default function Resources() {
         <DialogTitle fontWeight={700}>{dialog.mode === 'create' ? 'Add Team Member' : 'Edit Member'}</DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ pt: 0.5 }}>
-            <Grid item xs={12}><TextField fullWidth label="Full name *" value={dialog.data.name} onChange={f('name')} /></Grid>
-            <Grid item xs={12}><TextField fullWidth type="email" label="Email" value={dialog.data.email} onChange={f('email')} /></Grid>
-            <Grid item xs={6}><TextField fullWidth label="Role / Title" value={dialog.data.role} onChange={f('role')} /></Grid>
-            <Grid item xs={6}><TextField fullWidth label="Department" value={dialog.data.department} onChange={f('department')} /></Grid>
-            <Grid item xs={6}><TextField fullWidth type="number" label="Capacity (hrs/week)" value={dialog.data.capacity_hours} onChange={f('capacity_hours')} /></Grid>
-            <Grid item xs={6}><TextField fullWidth type="number" label="Allocated (hrs/week)" value={dialog.data.allocated_hours} onChange={f('allocated_hours')} /></Grid>
+            <Grid item xs={12}><TextField fullWidth label="Full name *" value={dialog.data.name} onChange={f('name')}
+              error={!!showErr('name')} helperText={showErr('name') || ''} /></Grid>
+            <Grid item xs={12}><TextField fullWidth type="email" label="Email" value={dialog.data.email} onChange={f('email')}
+              error={!!showErr('email')} helperText={showErr('email') || ''} /></Grid>
+            <Grid item xs={6}><TextField fullWidth label="Role / Title *" value={dialog.data.role} onChange={f('role')}
+              error={!!showErr('role')} helperText={showErr('role') || ''} /></Grid>
+            <Grid item xs={6}><TextField fullWidth label="Department *" value={dialog.data.department} onChange={f('department')}
+              error={!!showErr('department')} helperText={showErr('department') || ''} /></Grid>
+            <Grid item xs={6}><TextField fullWidth type="number" label="Capacity (hrs/week) *" value={dialog.data.capacity_hours} onChange={f('capacity_hours')} inputProps={{ min: 1 }}
+              error={!!showErr('capacity_hours')} helperText={showErr('capacity_hours') || ''} /></Grid>
+            <Grid item xs={6}><TextField fullWidth type="number" label="Allocated (hrs/week)" value={dialog.data.allocated_hours} onChange={f('allocated_hours')} inputProps={{ min: 0 }}
+              error={!!showErr('allocated_hours')} helperText={showErr('allocated_hours') || ''} /></Grid>
             <Grid item xs={12}><TextField fullWidth label="Current projects (comma separated)" value={dialog.data.projects} onChange={f('projects')} helperText="e.g. Alpha, Beta, Gamma" /></Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={closeDialog} sx={{ textTransform: 'none' }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving || !dialog.data.name}
+          <Button variant="contained" onClick={handleSave} disabled={saving || !isValid}
             sx={{ textTransform: 'none', fontWeight: 600 }}>
             {saving ? 'Saving…' : dialog.mode === 'create' ? 'Add' : 'Save'}
           </Button>
