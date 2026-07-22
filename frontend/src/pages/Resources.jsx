@@ -25,6 +25,8 @@ import SearchIcon from '@mui/icons-material/Search'
 import EmailIcon from '@mui/icons-material/Email'
 import WorkIcon from '@mui/icons-material/Work'
 import { resourceService } from '../services/resourceService'
+import { useAuth } from '../context/AuthContext'
+import { can } from '../utils/permissions'
 
 const EMPTY = {
   name: '', email: '', role: '', department: '',
@@ -41,6 +43,7 @@ function getColor(name = '') {
 }
 
 export default function Resources() {
+  const { user } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -134,10 +137,12 @@ export default function Resources() {
             )}
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
-          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-          Add Member
-        </Button>
+        {can(user, 'resource:create') && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
+            Add Member
+          </Button>
+        )}
       </Box>
 
       <TextField
@@ -185,16 +190,17 @@ export default function Resources() {
                       position: 'relative',
                     }}
                   >
-                    {isOver && (
-                      <Chip label="Over-allocated" size="small" color="error"
-                        sx={{ position: 'absolute', top: 12, right: 44, fontWeight: 600, fontSize: '0.68rem' }} />
-                    )}
+
                     <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex' }}>
-                      <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(r)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-                      <Tooltip title="Remove"><IconButton size="small" color="error" onClick={() => setDelConfirm(r)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                      {can(user, 'resource:edit') && (
+                        <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(r)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                      )}
+                      {can(user, 'resource:delete') && (
+                        <Tooltip title="Remove"><IconButton size="small" color="error" onClick={() => setDelConfirm(r)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                      )}
                     </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, pr: 8 }}>
                       <Avatar sx={{ bgcolor: getColor(r.name), width: 44, height: 44, fontWeight: 700 }}>
                         {getInitials(r.name)}
                       </Avatar>
@@ -218,17 +224,25 @@ export default function Resources() {
                       </Box>
                     )}
 
-                    {r.projects && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                        Projects: {r.projects}
-                      </Typography>
-                    )}
+                    <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {isOver ? (
+                        <Chip label="Over-allocated" size="small"
+                          sx={{ fontWeight: 700, fontSize: '0.68rem', bgcolor: '#FEE2E2', color: '#991B1B' }} />
+                      ) : allocPct < 50 ? (
+                        <Chip label="Available" size="small"
+                          sx={{ fontWeight: 700, fontSize: '0.68rem', bgcolor: '#DCFCE7', color: '#166534' }} />
+                      ) : null}
+                      {(r.projects || '').split(',').map(s => s.trim()).filter(Boolean).map((p, i) => (
+                        <Chip key={i} label={p.replace(/\s*\(\d+h\)/, '')} size="small" variant="outlined"
+                          sx={{ fontSize: '0.68rem', height: 22 }} />
+                      ))}
+                    </Box>
 
                     <Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">Allocation</Typography>
-                        <Typography variant="caption" fontWeight={700} color={isOver ? 'error.main' : 'text.primary'}>
-                          {r.allocated_hours}h / {r.capacity_hours}h ({allocPct}%)
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, gap: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>Allocation</Typography>
+                        <Typography variant="caption" fontWeight={700} sx={{ whiteSpace: 'nowrap' }} color={isOver ? 'error.main' : 'text.primary'}>
+                          {r.allocated_hours}h / {r.capacity_hours}h · {allocPct}%
                         </Typography>
                       </Box>
                       <LinearProgress

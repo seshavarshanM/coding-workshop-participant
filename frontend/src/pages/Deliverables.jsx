@@ -29,6 +29,8 @@ import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { deliverableService } from '../services/deliverableService'
+import { useAuth } from '../context/AuthContext'
+import { can, canUpdateProgress } from '../utils/permissions'
 import { projectService } from '../services/projectService'
 import StatusChip from '../components/StatusChip'
 
@@ -38,12 +40,13 @@ const EMPTY = {
 }
 
 export default function Deliverables() {
+  const { user } = useAuth()
   const [items, setItems] = useState([])
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterProject, setFilterProject] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
-  const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY })
+  const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY, limited: false })
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
@@ -69,9 +72,9 @@ export default function Deliverables() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY }) }
-  const openEdit   = (d) => { setTouched({}); setDialog({
-    open: true, mode: 'edit',
+  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY, limited: false }) }
+  const openEdit   = (d, limited = false) => { setTouched({}); setDialog({
+    open: true, mode: 'edit', limited,
     data: { ...d, due_date: d.due_date?.split('T')[0] || '' }
   }) }
   const closeDialog = () => setDialog(d => ({ ...d, open: false }))
@@ -139,10 +142,12 @@ export default function Deliverables() {
           <Typography variant="h5" fontWeight={700}>Deliverables</Typography>
           <Typography variant="body2" color="text.secondary">{items.length} total</Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
-          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-          New Deliverable
-        </Button>
+        {can(user, 'deliverable:create') && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
+            New Deliverable
+          </Button>
+        )}
       </Box>
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
@@ -213,8 +218,14 @@ export default function Deliverables() {
                         </Box>
                       </TableCell>
                       <TableCell align="center">
-                        <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(d)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-                        <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(d)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                        {can(user, 'deliverable:edit') ? (
+                          <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(d)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                        ) : canUpdateProgress(user, d) && (
+                          <Tooltip title="Update my progress"><IconButton size="small" color="primary" onClick={() => openEdit(d, true)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                        )}
+                        {can(user, 'deliverable:delete') && (
+                          <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(d)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -226,16 +237,29 @@ export default function Deliverables() {
 
       {/* Dialog */}
       <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>
-        <DialogTitle fontWeight={700}>{dialog.mode === 'create' ? 'New Deliverable' : 'Edit Deliverable'}</DialogTitle>
+        <DialogTitle fontWeight={700}>{dialog.limited ? 'Update My Progress' : dialog.mode === 'create' ? 'New Deliverable' : 'Edit Deliverable'}</DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ pt: 0.5 }}>
+            {dialog.limited && (
+              <Grid item xs={12}>
+                <Typography fontWeight={600}>{dialog.data.name}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  You can update only the status and completion of your own deliverable.
+                </Typography>
+              </Grid>
+            )}
+            {!dialog.limited && (
             <Grid item xs={12}>
               <TextField fullWidth label="Name *" value={dialog.data.name} onChange={f('name')}
                 error={!!showErr('name')} helperText={showErr('name') || ''} />
             </Grid>
+            )}
+            {!dialog.limited && (
             <Grid item xs={12}>
               <TextField fullWidth multiline rows={2} label="Description" value={dialog.data.description} onChange={f('description')} />
             </Grid>
+            )}
+            {!dialog.limited && (
             <Grid item xs={12}>
               <FormControl fullWidth error={!!showErr('project_id')}>
                 <InputLabel>Project *</InputLabel>
@@ -244,6 +268,7 @@ export default function Deliverables() {
                 </Select>
               </FormControl>
             </Grid>
+            )}
             <Grid item xs={6}>
               <FormControl fullWidth>
                 <InputLabel>Status</InputLabel>
@@ -254,6 +279,7 @@ export default function Deliverables() {
                 </Select>
               </FormControl>
             </Grid>
+            {!dialog.limited && (<>
             <Grid item xs={6}>
               <TextField fullWidth type="date" label="Due date *" value={dialog.data.due_date} onChange={f('due_date')} InputLabelProps={{ shrink: true }}
                 error={!!showErr('due_date')} helperText={showErr('due_date') || ''} />
@@ -262,6 +288,7 @@ export default function Deliverables() {
               <TextField fullWidth label="Assigned to *" value={dialog.data.assigned_to} onChange={f('assigned_to')}
                 error={!!showErr('assigned_to')} helperText={showErr('assigned_to') || ''} />
             </Grid>
+            </>)}
             <Grid item xs={6}>
               <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }}
                 error={!!showErr('completion_percentage')} helperText={showErr('completion_percentage') || ''} />

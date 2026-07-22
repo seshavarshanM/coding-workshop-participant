@@ -14,21 +14,39 @@ const theme = createTheme({
   palette: {
     primary:    { main: '#1565C0' },
     secondary:  { main: '#7C3AED' },
-    background: { default: '#F5F7FA', paper: '#FFFFFF' },
+    background: { default: '#F4F6FB', paper: '#FFFFFF' },
     error:      { main: '#DC2626' },
     success:    { main: '#16A34A' },
     warning:    { main: '#D97706' },
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    h5: { fontWeight: 700 },
+    h5: { fontWeight: 800, letterSpacing: '-0.5px' },
     h6: { fontWeight: 700 },
   },
-  shape:     { borderRadius: 8 },
+  shape:     { borderRadius: 10 },
   components: {
-    MuiButton:   { styleOverrides: { root: { textTransform: 'none', fontWeight: 600 } } },
+    MuiButton: {
+      styleOverrides: {
+        root: { textTransform: 'none', fontWeight: 600, borderRadius: 10 },
+        contained: {
+          background: 'linear-gradient(135deg,#1565C0 0%,#1E88E5 100%)',
+          boxShadow: '0 2px 8px rgba(21,101,192,0.25)',
+          '&:hover': { boxShadow: '0 4px 14px rgba(21,101,192,0.35)' },
+        },
+      },
+    },
     MuiTableCell: { styleOverrides: { root: { borderColor: '#F1F5F9' } } },
-    MuiPaper:    { styleOverrides: { root: { backgroundImage: 'none' } } },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+          transition: 'box-shadow .2s ease, transform .2s ease',
+        },
+      },
+    },
+    MuiChip: { styleOverrides: { root: { borderRadius: 6 } } },
+    MuiDialog: { styleOverrides: { paper: { borderRadius: 14 } } },
   },
 })
 

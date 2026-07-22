@@ -33,6 +33,8 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import SearchIcon from '@mui/icons-material/Search'
 import InputAdornment from '@mui/material/InputAdornment'
 import { projectService } from '../services/projectService'
+import { useAuth } from '../context/AuthContext'
+import { can } from '../utils/permissions'
 import StatusChip from '../components/StatusChip'
 
 const EMPTY_FORM = {
@@ -43,6 +45,7 @@ const EMPTY_FORM = {
 
 export default function Projects() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -140,10 +143,12 @@ export default function Projects() {
           <Typography variant="h5" fontWeight={700}>Projects</Typography>
           <Typography variant="body2" color="text.secondary">{projects.length} total</Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
-          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-          New Project
-        </Button>
+        {can(user, 'project:create') && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
+            New Project
+          </Button>
+        )}
       </Box>
 
       {/* Filters */}
@@ -229,8 +234,12 @@ export default function Projects() {
                       </TableCell>
                       <TableCell align="center">
                         <Tooltip title="Open"><IconButton size="small" onClick={() => navigate(`/projects/${p.id}`)}><OpenInNewIcon fontSize="small" /></IconButton></Tooltip>
-                        <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(p)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-                        <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(p)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                        {can(user, 'project:edit') && (
+                          <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(p)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                        )}
+                        {can(user, 'project:delete') && (
+                          <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(p)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

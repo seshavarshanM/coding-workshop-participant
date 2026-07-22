@@ -32,6 +32,8 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import { budgetService } from '../services/budgetService'
+import { useAuth } from '../context/AuthContext'
+import { can } from '../utils/permissions'
 import { projectService } from '../services/projectService'
 
 const CATEGORIES = ['Personnel','Infrastructure','Tooling','Vendor','Training','Marketing','Operations','Other']
@@ -52,6 +54,7 @@ function SummaryCard({ title, value, sub, color, bg }) {
 }
 
 export default function Budget() {
+  const { user } = useAuth()
   const [data, setData] = useState({ entries: [], summary: { total_planned: 0, total_actual: 0 } })
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -157,10 +160,12 @@ export default function Budget() {
           <Typography variant="h5" fontWeight={700}>Budget</Typography>
           <Typography variant="body2" color="text.secondary">{entries.length} entries</Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
-          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-          New Entry
-        </Button>
+        {can(user, 'budget:create') && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
+            New Entry
+          </Button>
+        )}
       </Box>
 
       {/* Summary cards */}
@@ -267,8 +272,12 @@ export default function Budget() {
                           </Box>
                         </TableCell>
                         <TableCell align="center">
-                          <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(e)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-                          <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(e)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                          {can(user, 'budget:edit') && (
+                            <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(e)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                          )}
+                          {can(user, 'budget:delete') && (
+                            <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(e)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                          )}
                         </TableCell>
                       </TableRow>
                     )

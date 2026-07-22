@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -16,21 +16,54 @@ import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Alert from '@mui/material/Alert'
 import Divider from '@mui/material/Divider'
+import Avatar from '@mui/material/Avatar'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import TextField from '@mui/material/TextField'
+import MenuItem from '@mui/material/MenuItem'
+import Snackbar from '@mui/material/Snackbar'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
-import PersonIcon from '@mui/icons-material/Person'
-import BusinessIcon from '@mui/icons-material/Business'
+import PersonAddIcon from '@mui/icons-material/PersonAdd'
+import PersonRemoveIcon from '@mui/icons-material/PersonRemove'
 import { projectService } from '../services/projectService'
 import { deliverableService } from '../services/deliverableService'
 import { budgetService } from '../services/budgetService'
+import { resourceService } from '../services/resourceService'
+import { useAuth } from '../context/AuthContext'
+import { can } from '../utils/permissions'
 import StatusChip from '../components/StatusChip'
 
-function InfoRow({ icon: Icon, label, value }) {
+// ── Team-membership helpers (stored in resource.projects CSV as "Name (Xh)") ──
+const teamEntry = (projName, hours) => `${projName} (${hours}h)`
+const entriesOf = (r) => (r.projects || '').split(',').map(s => s.trim()).filter(Boolean)
+const isOnTeam = (r, projName) =>
+  entriesOf(r).some(e => e === projName || e.startsWith(`${projName} (`))
+const hoursFor = (r, projName) => {
+  const e = entriesOf(r).find(x => x === projName || x.startsWith(`${projName} (`))
+  const m = e && e.match(/\((\d+)h\)/)
+  return m ? Number(m[1]) : 0
+}
+const remainingOf = (r) => Math.max(0, Number(r.capacity_hours || 0) - Number(r.allocated_hours || 0))
+
+function getInitials(name = '') {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
+function getColor(name = '') {
+  const colors = ['#1565C0', '#7C3AED', '#065F46', '#9A3412', '#1E40AF', '#6B21A8']
+  return colors[name.charCodeAt(0) % colors.length]
+}
+
+function InfoItem({ label, value }) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75 }}>
-      <Icon sx={{ fontSize: 16, color: 'text.secondary' }} />
-      <Typography variant="caption" color="text.secondary" sx={{ minWidth: 80 }}>{label}</Typography>
-      <Typography variant="body2" fontWeight={500}>{value || '—'}</Typography>
+    <Box sx={{ minWidth: 130 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
+        {label}
+      </Typography>
+      <Typography variant="body2" fontWeight={600}>{value || '—'}</Typography>
     </Box>
   )
 }
@@ -38,26 +71,37 @@ function InfoRow({ icon: Icon, label, value }) {
 export default function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [project, setProject] = useState(null)
   const [deliverables, setDeliverables] = useState([])
   const [budget, setBudget] = useState({ entries: [], summary: { total_planned: 0, total_actual: 0 } })
+  const [resources, setResources] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [assignForm, setAssignForm] = useState({ resource_id: '', hours: '' })
+  const [saving, setSaving] = useState(false)
+  const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true)
     Promise.all([
       projectService.getById(id),
       deliverableService.getAll({ project_id: id }),
       budgetService.getAll({ project_id: id }),
+      resourceService.getAll(),
     ])
-      .then(([p, d, b]) => {
+      .then(([p, d, b, r]) => {
         setProject(p)
         setDeliverables(d)
         setBudget(b || { entries: [], summary: { total_planned: 0, total_actual: 0 } })
+        setResources(r)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => { load() }, [load])
 
   if (loading) return (
     <Box>
@@ -65,99 +109,191 @@ export default function ProjectDetail() {
       <Skeleton variant="rectangular" height={200} sx={{ mt: 2, borderRadius: 3 }} />
     </Box>
   )
-
   if (error) return <Alert severity="error">{error}</Alert>
   if (!project) return <Alert severity="warning">Project not found</Alert>
 
-  const budgetPct = project.budget_planned > 0
-    ? Math.round((Number(project.budget_spent) / Number(project.budget_planned)) * 100)
-    : 0
+  const team = resources.filter(r => isOnTeam(r, project.name))
+  const available = resources
+    .filter(r => !isOnTeam(r, project.name))
+    .sort((a, b) => remainingOf(b) - remainingOf(a))
 
+  const selectedResource = resources.find(r => r.id === assignForm.resource_id)
+  const remaining = selectedResource ? remainingOf(selectedResource) : 0
+  const hoursNum = Number(assignForm.hours)
+  const hoursError =
+    assignForm.hours === '' ? '' :
+    hoursNum < 1 ? 'At least 1 hour' :
+    hoursNum > remaining ? `Exceeds ${selectedResource?.name}'s free capacity (${remaining}h left)` : ''
+  const assignValid = assignForm.resource_id && assignForm.hours !== '' && !hoursError
+
+  const handleAssign = async () => {
+    setSaving(true)
+    try {
+      const r = selectedResource
+      const newProjects = [...entriesOf(r), teamEntry(project.name, hoursNum)].join(', ')
+      await resourceService.update(r.id, {
+        projects: newProjects,
+        allocated_hours: Number(r.allocated_hours || 0) + hoursNum,
+      })
+      setSnack({ open: true, msg: `${r.name} assigned (${hoursNum}h/week)`, sev: 'success' })
+      setAssignOpen(false)
+      setAssignForm({ resource_id: '', hours: '' })
+      load()
+    } catch (e) {
+      setSnack({ open: true, msg: e.message, sev: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleUnassign = async (r) => {
+    try {
+      const hrs = hoursFor(r, project.name)
+      const newProjects = entriesOf(r)
+        .filter(e => !(e === project.name || e.startsWith(`${project.name} (`)))
+        .join(', ')
+      await resourceService.update(r.id, {
+        projects: newProjects,
+        allocated_hours: Math.max(0, Number(r.allocated_hours || 0) - hrs),
+      })
+      setSnack({ open: true, msg: `${r.name} removed from team`, sev: 'success' })
+      load()
+    } catch (e) {
+      setSnack({ open: true, msg: e.message, sev: 'error' })
+    }
+  }
+
+  const budgetPct = project.budget_planned > 0
+    ? Math.round((Number(project.budget_spent) / Number(project.budget_planned)) * 100) : 0
   const doneCount = deliverables.filter(d => d.status === 'completed').length
   const totalDels = deliverables.length
+  const canManageTeam = can(user, 'resource:edit')
 
   return (
     <Box>
-      {/* Back */}
       <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/projects')}
         sx={{ textTransform: 'none', mb: 2, color: 'text.secondary' }}>
         Back to Projects
       </Button>
 
-      {/* Header card */}
-      <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid', borderColor: 'divider', mb: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
-              <Typography variant="h5" fontWeight={800}>{project.name}</Typography>
-              <StatusChip value={project.status} size="medium" />
-              <StatusChip value={project.priority} size="medium" />
+      {/* ── Header card ── */}
+      <Paper elevation={0} sx={{
+        borderRadius: 3, border: '1px solid', borderColor: 'divider', mb: 2, overflow: 'hidden',
+      }}>
+        {/* Accent strip */}
+        <Box sx={{ height: 6, background: 'linear-gradient(90deg,#1565C0,#7C3AED)' }} />
+        <Box sx={{ p: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1, flexWrap: 'wrap' }}>
+                <Typography variant="h5" fontWeight={800}>{project.name}</Typography>
+                <StatusChip value={project.status} size="medium" />
+                <StatusChip value={project.priority} size="medium" />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 600 }}>
+                {project.description || 'No description provided.'}
+              </Typography>
             </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 600 }}>
-              {project.description || 'No description provided.'}
-            </Typography>
+            {can(user, 'project:edit') && (
+              <Button variant="outlined" onClick={() => navigate('/projects')}
+                sx={{ textTransform: 'none', borderRadius: 2 }}>
+                Edit Project
+              </Button>
+            )}
           </Box>
-          <Button variant="outlined" onClick={() => navigate('/projects')}
-            sx={{ textTransform: 'none', borderRadius: 2 }}>
-            Edit Project
-          </Button>
+
+          <Divider sx={{ my: 2.5 }} />
+
+          {/* Info row — flex wrap, no overlap */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 4, mb: 3 }}>
+            <InfoItem label="Manager" value={project.manager} />
+            <InfoItem label="Department" value={project.department} />
+            <InfoItem label="Start" value={project.start_date ? new Date(project.start_date).toLocaleDateString() : null} />
+            <InfoItem label="Deadline" value={project.end_date ? new Date(project.end_date).toLocaleDateString() : null} />
+            <InfoItem label="Team size" value={`${team.length} member${team.length === 1 ? '' : 's'}`} />
+          </Box>
+
+          {/* Progress row — its own line, half/half */}
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">Completion</Typography>
+                <Typography variant="caption" fontWeight={700}>{project.completion_percentage || 0}%</Typography>
+              </Box>
+              <LinearProgress variant="determinate" value={project.completion_percentage || 0}
+                sx={{ height: 8, borderRadius: 4, bgcolor: '#E2E8F0',
+                  '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 4 } }} />
+              <Typography variant="caption" color="text.secondary">
+                {doneCount}/{totalDels} deliverables done
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">Budget used</Typography>
+                <Typography variant="caption" fontWeight={700}>{budgetPct}%</Typography>
+              </Box>
+              <LinearProgress variant="determinate" value={Math.min(budgetPct, 100)}
+                sx={{ height: 8, borderRadius: 4, bgcolor: '#E2E8F0',
+                  '& .MuiLinearProgress-bar': {
+                    bgcolor: budgetPct > 90 ? '#DC2626' : budgetPct > 70 ? '#D97706' : '#16A34A',
+                    borderRadius: 4 } }} />
+              <Typography variant="caption" color="text.secondary">
+                ${Number(project.budget_spent || 0).toLocaleString()} / ${Number(project.budget_planned || 0).toLocaleString()}
+              </Typography>
+            </Grid>
+          </Grid>
         </Box>
-
-        <Divider sx={{ my: 2 }} />
-
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={3}>
-            <InfoRow icon={PersonIcon} label="Manager" value={project.manager} />
-            <InfoRow icon={BusinessIcon} label="Department" value={project.department} />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <InfoRow icon={CalendarTodayIcon} label="Start" value={project.start_date ? new Date(project.start_date).toLocaleDateString() : null} />
-            <InfoRow icon={CalendarTodayIcon} label="Deadline" value={project.end_date ? new Date(project.end_date).toLocaleDateString() : null} />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Box sx={{ display: 'flex', gap: 3 }}>
-              {/* Completion */}
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">Completion</Typography>
-                  <Typography variant="caption" fontWeight={700}>{project.completion_percentage || 0}%</Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={project.completion_percentage || 0}
-                  sx={{ height: 8, borderRadius: 4, bgcolor: '#E2E8F0',
-                    '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 4 } }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  {doneCount}/{totalDels} deliverables done
-                </Typography>
-              </Box>
-              {/* Budget */}
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">Budget used</Typography>
-                  <Typography variant="caption" fontWeight={700}>{budgetPct}%</Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={Math.min(budgetPct, 100)}
-                  sx={{ height: 8, borderRadius: 4, bgcolor: '#E2E8F0',
-                    '& .MuiLinearProgress-bar': {
-                      bgcolor: budgetPct > 90 ? '#DC2626' : budgetPct > 70 ? '#D97706' : '#16A34A',
-                      borderRadius: 4
-                    }
-                  }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  ${Number(project.budget_spent || 0).toLocaleString()} / ${Number(project.budget_planned || 0).toLocaleString()}
-                </Typography>
-              </Box>
-            </Box>
-          </Grid>
-        </Grid>
       </Paper>
 
-      {/* Deliverables */}
+      {/* ── Team section (Feature #3: smart assignment with availability) ── */}
+      <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', mb: 2 }}>
+        <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography fontWeight={700}>Team ({team.length})</Typography>
+          {canManageTeam && (
+            <Button size="small" variant="contained" startIcon={<PersonAddIcon />}
+              onClick={() => { setAssignForm({ resource_id: '', hours: '' }); setAssignOpen(true) }}
+              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 600 }}>
+              Assign member
+            </Button>
+          )}
+        </Box>
+        <Divider />
+        {team.length === 0 ? (
+          <Box sx={{ py: 4, textAlign: 'center' }}>
+            <Typography color="text.secondary" variant="body2">
+              No team assigned yet.{canManageTeam ? ' Use "Assign member" to build the team from available capacity.' : ''}
+            </Typography>
+          </Box>
+        ) : (
+          <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+            {team.map(r => (
+              <Paper key={r.id} elevation={0} sx={{
+                display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.25,
+                borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: '#FAFBFC',
+              }}>
+                <Avatar sx={{ width: 34, height: 34, fontSize: '0.8rem', fontWeight: 700, bgcolor: getColor(r.name) }}>
+                  {getInitials(r.name)}
+                </Avatar>
+                <Box>
+                  <Typography fontSize="0.85rem" fontWeight={600} lineHeight={1.2}>{r.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">{r.role || '—'}</Typography>
+                </Box>
+                <Chip size="small" label={`${hoursFor(r, project.name)}h/wk`}
+                  sx={{ fontWeight: 700, fontSize: '0.7rem', bgcolor: '#DBEAFE', color: '#1565C0' }} />
+                {canManageTeam && (
+                  <Tooltip title="Remove from team">
+                    <IconButton size="small" color="error" onClick={() => handleUnassign(r)}>
+                      <PersonRemoveIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Paper>
+            ))}
+          </Box>
+        )}
+      </Paper>
+
+      {/* ── Deliverables ── */}
       <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', mb: 2 }}>
         <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography fontWeight={700}>Deliverables ({totalDels})</Typography>
@@ -192,24 +328,20 @@ export default function ProjectDetail() {
                       </TableCell>
                       <TableCell sx={{ minWidth: 110 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={d.completion_percentage || 0}
+                          <LinearProgress variant="determinate" value={d.completion_percentage || 0}
                             sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: '#E2E8F0',
-                              '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 3 } }}
-                          />
+                              '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 3 } }} />
                           <Typography variant="caption">{d.completion_percentage || 0}%</Typography>
                         </Box>
                       </TableCell>
                     </TableRow>
-                  ))
-              }
+                  ))}
             </TableBody>
           </Table>
         </TableContainer>
       </Paper>
 
-      {/* Budget entries */}
+      {/* ── Budget entries ── */}
       <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
         <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography fontWeight={700}>Budget Entries ({budget.entries?.length || 0})</Typography>
@@ -235,25 +367,19 @@ export default function ProjectDetail() {
                     const variance = Number(e.planned_amount) - Number(e.actual_amount)
                     return (
                       <TableRow key={e.id} hover>
-                        <TableCell fontWeight={600} fontSize="0.85rem">{e.category}</TableCell>
+                        <TableCell sx={{ fontWeight: 600, fontSize: '0.85rem' }}>{e.category}</TableCell>
                         <TableCell sx={{ color: 'text.secondary', fontSize: '0.82rem' }}>{e.description || '—'}</TableCell>
                         <TableCell align="right" sx={{ fontSize: '0.85rem' }}>${Number(e.planned_amount).toLocaleString()}</TableCell>
                         <TableCell align="right" sx={{ fontSize: '0.85rem' }}>${Number(e.actual_amount).toLocaleString()}</TableCell>
                         <TableCell align="right">
-                          <Chip
-                            label={`${variance >= 0 ? '+' : ''}$${variance.toLocaleString()}`}
-                            size="small"
-                            sx={{
-                              fontWeight: 600, fontSize: '0.72rem',
+                          <Chip label={`${variance >= 0 ? '+' : ''}$${variance.toLocaleString()}`} size="small"
+                            sx={{ fontWeight: 600, fontSize: '0.72rem',
                               color: variance >= 0 ? '#166534' : '#991B1B',
-                              bgcolor: variance >= 0 ? '#DCFCE7' : '#FEE2E2',
-                            }}
-                          />
+                              bgcolor: variance >= 0 ? '#DCFCE7' : '#FEE2E2' }} />
                         </TableCell>
                       </TableRow>
                     )
-                  })
-              }
+                  })}
               {(budget.entries || []).length > 0 && (
                 <TableRow sx={{ bgcolor: '#F8FAFC' }}>
                   <TableCell colSpan={2} sx={{ fontWeight: 700 }}>Total</TableCell>
@@ -266,6 +392,56 @@ export default function ProjectDetail() {
           </Table>
         </TableContainer>
       </Paper>
+
+      {/* ── Assign dialog: capacity-aware member picker ── */}
+      <Dialog open={assignOpen} onClose={() => setAssignOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle fontWeight={700}>Assign Team Member</DialogTitle>
+        <DialogContent dividers>
+          <TextField select fullWidth label="Member (sorted by free capacity)"
+            value={assignForm.resource_id}
+            onChange={e => setAssignForm(f => ({ ...f, resource_id: e.target.value }))}
+            sx={{ mb: 2, mt: 0.5 }}>
+            {available.length === 0 && <MenuItem disabled value="">Everyone is already on this team</MenuItem>}
+            {available.map(r => {
+              const rem = remainingOf(r)
+              const util = r.capacity_hours > 0
+                ? Math.round((Number(r.allocated_hours) / Number(r.capacity_hours)) * 100) : 0
+              return (
+                <MenuItem key={r.id} value={r.id} disabled={rem === 0}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', gap: 1 }}>
+                    <span>{r.name} · {r.role || 'No role'}</span>
+                    <Chip size="small"
+                      label={rem === 0 ? 'Full' : util < 50 ? `Available · ${rem}h free` : `${rem}h free`}
+                      sx={{
+                        fontWeight: 700, fontSize: '0.68rem',
+                        bgcolor: rem === 0 ? '#FEE2E2' : util < 50 ? '#DCFCE7' : '#FEF3C7',
+                        color:   rem === 0 ? '#991B1B' : util < 50 ? '#166534' : '#92400E',
+                      }} />
+                  </Box>
+                </MenuItem>
+              )
+            })}
+          </TextField>
+          <TextField fullWidth type="number" label="Hours per week"
+            value={assignForm.hours}
+            onChange={e => setAssignForm(f => ({ ...f, hours: e.target.value }))}
+            inputProps={{ min: 1 }}
+            error={!!hoursError} helperText={hoursError || (selectedResource ? `${remaining}h remaining of ${selectedResource.capacity_hours}h capacity` : '')} />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setAssignOpen(false)} sx={{ textTransform: 'none' }}>Cancel</Button>
+          <Button variant="contained" onClick={handleAssign} disabled={saving || !assignValid}
+            sx={{ textTransform: 'none', fontWeight: 600 }}>
+            {saving ? 'Assigning…' : 'Assign'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={snack.open} autoHideDuration={3500}
+        onClose={() => setSnack(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+        <Alert severity={snack.sev} variant="filled" sx={{ borderRadius: 2 }}>{snack.msg}</Alert>
+      </Snackbar>
     </Box>
   )
 }
