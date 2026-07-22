@@ -135,6 +135,31 @@ export default function Deliverables() {
     setDialog(d => ({ ...d, data: { ...d.data, [field]: e.target.value } }))
   }
 
+  // ── Tier A: status <-> completion are bound together ──────────
+  // Completed => 100%; any status change to non-completed with 100% relaxes to 99 if user then edits.
+  const setStatus = (e) => {
+    const status = e.target.value
+    setTouched(t => ({ ...t, status: true }))
+    setDialog(d => {
+      let pct = Number(d.data.completion_percentage) || 0
+      if (status === 'completed') pct = 100
+      else if (status === 'pending') pct = 0
+      else if (pct === 100) pct = 90  // reopening a done item
+      return { ...d, data: { ...d.data, status, completion_percentage: pct } }
+    })
+  }
+  const setCompletion = (e) => {
+    const pct = e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value)))
+    setTouched(t => ({ ...t, completion_percentage: true }))
+    setDialog(d => {
+      let status = d.data.status
+      if (pct === 100) status = 'completed'
+      else if (pct === 0) status = 'pending'
+      else if (status === 'completed' || status === 'pending') status = 'in_progress'
+      return { ...d, data: { ...d.data, completion_percentage: pct, status } }
+    })
+  }
+
   return (
     <Box>
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -272,7 +297,7 @@ export default function Deliverables() {
             <Grid item xs={6}>
               <FormControl fullWidth>
                 <InputLabel>Status</InputLabel>
-                <Select label="Status" value={dialog.data.status} onChange={f('status')}>
+                <Select label="Status" value={dialog.data.status} onChange={setStatus}>
                   {['pending','in_progress','completed','blocked'].map(s => (
                     <MenuItem key={s} value={s}>{s.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase())}</MenuItem>
                   ))}
@@ -290,8 +315,9 @@ export default function Deliverables() {
             </Grid>
             </>)}
             <Grid item xs={6}>
-              <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }}
-                error={!!showErr('completion_percentage')} helperText={showErr('completion_percentage') || ''} />
+              <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={setCompletion} inputProps={{ min: 0, max: 100 }}
+                error={!!showErr('completion_percentage')}
+                helperText={showErr('completion_percentage') || 'Linked to status: 100% = Completed'} />
             </Grid>
           </Grid>
         </DialogContent>

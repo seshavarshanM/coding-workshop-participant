@@ -103,6 +103,20 @@ export default function ProjectDetail() {
 
   useEffect(() => { load() }, [load])
 
+  // ── Tier A: project completion is DERIVED from its deliverables ──
+  useEffect(() => {
+    if (!project || deliverables.length === 0) return
+    const avg = Math.round(
+      deliverables.reduce((s, d) => s + Number(d.completion_percentage || 0), 0) / deliverables.length
+    )
+    if (avg !== Number(project.completion_percentage || 0)) {
+      // persist the derived value so lists/dashboard stay consistent
+      projectService.update(project.id, { completion_percentage: avg })
+        .then(() => setProject(p => ({ ...p, completion_percentage: avg })))
+        .catch(() => {})
+    }
+  }, [deliverables, project])
+
   if (loading) return (
     <Box>
       <Skeleton variant="text" width={300} height={40} />
@@ -167,6 +181,9 @@ export default function ProjectDetail() {
   const spentFromEntries = Number(budget.summary?.total_actual || 0)
   const budgetPct = project.budget_planned > 0
     ? Math.round((spentFromEntries / Number(project.budget_planned)) * 100) : 0
+  const derivedCompletion = deliverables.length > 0
+    ? Math.round(deliverables.reduce((s, d) => s + Number(d.completion_percentage || 0), 0) / deliverables.length)
+    : Number(project.completion_percentage || 0)
   const doneCount = deliverables.filter(d => d.status === 'completed').length
   const totalDels = deliverables.length
   const canManageTeam = can(user, 'resource:edit')
@@ -220,9 +237,9 @@ export default function ProjectDetail() {
             <Grid item xs={12} sm={6}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                 <Typography variant="caption" color="text.secondary">Completion</Typography>
-                <Typography variant="caption" fontWeight={700}>{project.completion_percentage || 0}%</Typography>
+                <Typography variant="caption" fontWeight={700}>{derivedCompletion}%</Typography>
               </Box>
-              <LinearProgress variant="determinate" value={project.completion_percentage || 0}
+              <LinearProgress variant="determinate" value={derivedCompletion}
                 sx={{ height: 8, borderRadius: 4, bgcolor: '#E2E8F0',
                   '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 4 } }} />
               <Typography variant="caption" color="text.secondary">

@@ -106,6 +106,15 @@ export default function Budget() {
   const isValid = Object.keys(errors).length === 0
   const showErr = (field) => touched[field] && errors[field]
 
+  // ── Tier A: warn if this project's planned entries would exceed its budget ceiling ──
+  const selectedProject = projects.find(p => p.id === dialog.data.project_id)
+  const ceiling = selectedProject ? Number(selectedProject.budget_planned || 0) : 0
+  const existingPlanned = (data.entries || [])
+    .filter(e => e.project_id === dialog.data.project_id && e.id !== dialog.data.id)
+    .reduce((s, e) => s + Number(e.planned_amount || 0), 0)
+  const projectedTotal = existingPlanned + Number(dialog.data.planned_amount || 0)
+  const overCeiling = ceiling > 0 && projectedTotal > ceiling
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -324,6 +333,15 @@ export default function Budget() {
               <TextField fullWidth type="number" label="Actual amount ($)" value={dialog.data.actual_amount} onChange={f('actual_amount')} inputProps={{ min: 0 }}
                 error={!!showErr('actual_amount')} helperText={showErr('actual_amount') || ''} />
             </Grid>
+            {selectedProject && (
+              <Grid item xs={12}>
+                <Alert severity={overCeiling ? 'warning' : 'info'} sx={{ fontSize: '0.8rem' }}>
+                  {overCeiling
+                    ? `This brings planned entries to $${projectedTotal.toLocaleString()}, exceeding ${selectedProject.name}'s $${ceiling.toLocaleString()} budget by $${(projectedTotal - ceiling).toLocaleString()}.`
+                    : `Planned entries for ${selectedProject.name}: $${projectedTotal.toLocaleString()} of $${ceiling.toLocaleString()} budget.`}
+                </Alert>
+              </Grid>
+            )}
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>

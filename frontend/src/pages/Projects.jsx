@@ -125,9 +125,6 @@ export default function Projects() {
       errs.budget_planned = 'Planned budget is required'
     else if (Number(d.budget_planned) < 0)
       errs.budget_planned = 'Budget cannot be negative'
-    if (d.completion_percentage !== undefined && d.completion_percentage !== '' &&
-        (Number(d.completion_percentage) < 0 || Number(d.completion_percentage) > 100))
-      errs.completion_percentage = 'Must be between 0 and 100'
     return errs
   }
   const errors = validate(dialog.data)
@@ -349,9 +346,10 @@ export default function Projects() {
                 error={!!showErr('budget_planned')} helperText={showErr('budget_planned') || ''} />
             </Grid>
             {dialog.mode === 'edit' && (
-              <Grid item xs={6}>
-                <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }}
-                  error={!!showErr('completion_percentage')} helperText={showErr('completion_percentage') || ''} />
+              <Grid item xs={12}>
+                <Alert severity="info" sx={{ fontSize: '0.8rem' }}>
+                  Completion is calculated automatically from this project's deliverables.
+                </Alert>
               </Grid>
             )}
           </Grid>
