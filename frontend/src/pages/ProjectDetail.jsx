@@ -163,8 +163,10 @@ export default function ProjectDetail() {
     }
   }
 
+  // Budget used is COMPUTED from this project's budget entries (single source of truth)
+  const spentFromEntries = Number(budget.summary?.total_actual || 0)
   const budgetPct = project.budget_planned > 0
-    ? Math.round((Number(project.budget_spent) / Number(project.budget_planned)) * 100) : 0
+    ? Math.round((spentFromEntries / Number(project.budget_planned)) * 100) : 0
   const doneCount = deliverables.filter(d => d.status === 'completed').length
   const totalDels = deliverables.length
   const canManageTeam = can(user, 'resource:edit')
@@ -194,7 +196,7 @@ export default function ProjectDetail() {
                 {project.description || 'No description provided.'}
               </Typography>
             </Box>
-            {can(user, 'project:edit') && (
+            {can(user, 'project:edit') && (user.role === 'admin' || project.manager === user.name) && (
               <Button variant="outlined" onClick={() => navigate('/projects')}
                 sx={{ textTransform: 'none', borderRadius: 2 }}>
                 Edit Project
@@ -238,7 +240,7 @@ export default function ProjectDetail() {
                     bgcolor: budgetPct > 90 ? '#DC2626' : budgetPct > 70 ? '#D97706' : '#16A34A',
                     borderRadius: 4 } }} />
               <Typography variant="caption" color="text.secondary">
-                ${Number(project.budget_spent || 0).toLocaleString()} / ${Number(project.budget_planned || 0).toLocaleString()}
+                ${spentFromEntries.toLocaleString()} spent (from entries) / ${Number(project.budget_planned || 0).toLocaleString()} planned
               </Typography>
             </Grid>
           </Grid>

@@ -28,6 +28,7 @@ import { deliverableService } from '../services/deliverableService'
 import { resourceService } from '../services/resourceService'
 import { useAuth } from '../context/AuthContext'
 import StatusChip from '../components/StatusChip'
+import { isAtRisk } from '../utils/risk'
 
 function KPICard({ title, value, sub, Icon, color, bg }) {
   return (
@@ -228,7 +229,7 @@ export default function Dashboard() {
     const scope = myProjects.length > 0 ? myProjects : projects  // fallback: show all with note
     const scoped = myProjects.length > 0
     const active = scope.filter(p => p.status === 'active').length
-    const atRisk = scope.filter(p => p.status === 'at_risk').length
+    const atRisk = scope.filter(isAtRisk).length
     const myProjectNames = new Set(scope.map(p => p.name))
     const teamDeliverables = deliverables.filter(d => myProjectNames.has(d.project_name))
     const overdue = teamDeliverables.filter(d =>
@@ -255,7 +256,7 @@ export default function Dashboard() {
               Icon={CheckCircleOutlineIcon} color="#166534" bg="#DCFCE7" />
           </Grid>
           <Grid item xs={12} sm={6} lg={3}>
-            <KPICard title="At Risk" value={loading ? '—' : atRisk} sub="Need attention"
+            <KPICard title="At Risk" value={loading ? '—' : atRisk} sub="Incl. auto-detected"
               Icon={WarningAmberIcon} color="#92400E" bg="#FEF3C7" />
           </Grid>
           <Grid item xs={12} sm={6} lg={3}>
@@ -274,7 +275,7 @@ export default function Dashboard() {
   // Org-wide: everything, including resource utilization.
   const total = projects.length
   const active = projects.filter(p => p.status === 'active').length
-  const atRisk = projects.filter(p => p.status === 'at_risk').length
+  const atRisk = projects.filter(isAtRisk).length
   const completed = projects.filter(p => p.status === 'completed').length
   const budgetPct = budget.total_planned > 0
     ? Math.round((Number(budget.total_actual) / Number(budget.total_planned)) * 100) : 0
@@ -301,7 +302,7 @@ export default function Dashboard() {
             Icon={FolderOpenIcon} color="#1565C0" bg="#DBEAFE" />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>
-          <KPICard title="At Risk" value={loading ? '—' : atRisk} sub="Need attention"
+          <KPICard title="At Risk" value={loading ? '—' : atRisk} sub="Incl. auto-detected"
             Icon={WarningAmberIcon} color="#92400E" bg="#FEF3C7" />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>

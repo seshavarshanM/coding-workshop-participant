@@ -32,9 +32,12 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import SearchIcon from '@mui/icons-material/Search'
 import InputAdornment from '@mui/material/InputAdornment'
+import TableSortLabel from '@mui/material/TableSortLabel'
+import ReportProblemIcon from '@mui/icons-material/ReportProblem'
 import { projectService } from '../services/projectService'
 import { useAuth } from '../context/AuthContext'
 import { can } from '../utils/permissions'
+import { isAtRisk, riskReason } from '../utils/risk'
 import StatusChip from '../components/StatusChip'
 
 const EMPTY_FORM = {
@@ -50,6 +53,7 @@ export default function Projects() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [sort, setSort] = useState({ field: '', dir: 'asc' })
   const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY_FORM })
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -72,7 +76,35 @@ export default function Projects() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY_FORM }) }
+  const PRIORITY_ORDER = { low: 0, medium: 1, high: 2, critical: 3 }
+  const toggleSort = (field) => setSort(s =>
+    s.field === field ? { field, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' })
+
+  const sorted = [...projects].sort((a, b) => {
+    if (!sort.field) return 0
+    let av, bv
+    switch (sort.field) {
+      case 'name':     av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); break
+      case 'status':   av = a.status || ''; bv = b.status || ''; break
+      case 'priority': av = PRIORITY_ORDER[a.priority] ?? 0; bv = PRIORITY_ORDER[b.priority] ?? 0; break
+      case 'manager':  av = (a.manager || '').toLowerCase(); bv = (b.manager || '').toLowerCase(); break
+      case 'progress': av = Number(a.completion_percentage || 0); bv = Number(b.completion_percentage || 0); break
+      case 'budget':   av = Number(a.budget_planned || 0); bv = Number(b.budget_planned || 0); break
+      case 'end_date': av = a.end_date || '9999'; bv = b.end_date || '9999'; break
+      default: return 0
+    }
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0
+    return sort.dir === 'asc' ? cmp : -cmp
+  })
+
+  const canEditProject = (p) =>
+    can(user, 'project:edit') && (user.role === 'admin' || p.manager === user.name)
+  const managerLocked = user?.role === 'manager'
+
+  const openCreate = () => { setTouched({}); setDialog({
+    open: true, mode: 'create',
+    data: { ...EMPTY_FORM, manager: managerLocked ? user.name : '' }
+  }) }
   const openEdit   = (p) => { setTouched({}); setDialog({
     open: true, mode: 'edit',
     data: { ...p, start_date: p.start_date?.split('T')[0] || '', end_date: p.end_date?.split('T')[0] || '' }
@@ -179,13 +211,15 @@ export default function Projects() {
           <Table size="small">
             <TableHead>
               <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.78rem', bgcolor: '#F8FAFC' } }}>
-                <TableCell>Project</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Priority</TableCell>
-                <TableCell>Manager</TableCell>
-                <TableCell>Progress</TableCell>
-                <TableCell align="right">Budget Planned</TableCell>
-                <TableCell>End Date</TableCell>
+                <TableCell sortDirection={sort.field === 'name' ? sort.dir : false}>
+                  <TableSortLabel active={sort.field === 'name'} direction={sort.field === 'name' ? sort.dir : 'asc'} onClick={() => toggleSort('name')}>Project</TableSortLabel>
+                </TableCell>
+                <TableCell><TableSortLabel active={sort.field === 'status'} direction={sort.field === 'status' ? sort.dir : 'asc'} onClick={() => toggleSort('status')}>Status</TableSortLabel></TableCell>
+                <TableCell><TableSortLabel active={sort.field === 'priority'} direction={sort.field === 'priority' ? sort.dir : 'asc'} onClick={() => toggleSort('priority')}>Priority</TableSortLabel></TableCell>
+                <TableCell><TableSortLabel active={sort.field === 'manager'} direction={sort.field === 'manager' ? sort.dir : 'asc'} onClick={() => toggleSort('manager')}>Manager</TableSortLabel></TableCell>
+                <TableCell><TableSortLabel active={sort.field === 'progress'} direction={sort.field === 'progress' ? sort.dir : 'asc'} onClick={() => toggleSort('progress')}>Progress</TableSortLabel></TableCell>
+                <TableCell align="right"><TableSortLabel active={sort.field === 'budget'} direction={sort.field === 'budget' ? sort.dir : 'asc'} onClick={() => toggleSort('budget')}>Budget Planned</TableSortLabel></TableCell>
+                <TableCell><TableSortLabel active={sort.field === 'end_date'} direction={sort.field === 'end_date' ? sort.dir : 'asc'} onClick={() => toggleSort('end_date')}>End Date</TableSortLabel></TableCell>
                 <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -206,13 +240,22 @@ export default function Projects() {
                       </TableCell>
                     </TableRow>
                   )
-                : projects.map(p => (
+                : sorted.map(p => (
                     <TableRow key={p.id} hover>
                       <TableCell>
                         <Typography fontWeight={600} fontSize="0.85rem">{p.name}</Typography>
                         <Typography variant="caption" color="text.secondary">{p.department}</Typography>
                       </TableCell>
-                      <TableCell><StatusChip value={p.status} /></TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <StatusChip value={p.status} />
+                          {isAtRisk(p) && p.status !== 'at_risk' && (
+                            <Tooltip title={`Auto-flagged: ${riskReason(p)}`}>
+                              <ReportProblemIcon sx={{ fontSize: 16, color: '#D97706' }} />
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </TableCell>
                       <TableCell><StatusChip value={p.priority} /></TableCell>
                       <TableCell sx={{ fontSize: '0.85rem' }}>{p.manager || '—'}</TableCell>
                       <TableCell sx={{ minWidth: 110 }}>
@@ -234,7 +277,7 @@ export default function Projects() {
                       </TableCell>
                       <TableCell align="center">
                         <Tooltip title="Open"><IconButton size="small" onClick={() => navigate(`/projects/${p.id}`)}><OpenInNewIcon fontSize="small" /></IconButton></Tooltip>
-                        {can(user, 'project:edit') && (
+                        {canEditProject(p) && (
                           <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(p)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                         )}
                         {can(user, 'project:delete') && (
@@ -289,7 +332,9 @@ export default function Projects() {
             </Grid>
             <Grid item xs={6}>
               <TextField fullWidth label="Manager *" value={dialog.data.manager} onChange={f('manager')}
-                error={!!showErr('manager')} helperText={showErr('manager') || ''} />
+                disabled={managerLocked}
+                error={!!showErr('manager')}
+                helperText={showErr('manager') || (managerLocked ? 'Projects you create are owned by you' : '')} />
             </Grid>
             <Grid item xs={6}>
               <TextField fullWidth type="date" label="Start date *" value={dialog.data.start_date} onChange={f('start_date')} InputLabelProps={{ shrink: true }}
