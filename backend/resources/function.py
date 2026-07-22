@@ -13,6 +13,27 @@ def respond(status, body):
     return {'statusCode': status, 'headers': HEADERS, 'body': json.dumps(body, default=str)}
 
 
+def get_method(event):
+    return (
+        event.get('httpMethod')
+        or (event.get('requestContext') or {}).get('http', {}).get('method')
+        or 'GET'
+    ).upper()
+
+
+def get_path(event):
+    return event.get('path') or event.get('rawPath') or ''
+
+
+def get_id(event):
+    pp = event.get('pathParameters') or {}
+    if pp.get('id'):
+        return pp['id']
+    path = get_path(event)
+    parts = [p for p in path.split('/') if p and p not in ('api', 'resources')]
+    return parts[-1] if parts else None
+
+
 def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS resources (
@@ -30,19 +51,10 @@ def init_db():
     """)
 
 
-def get_id(event):
-    pp = event.get('pathParameters') or {}
-    if pp.get('id'):
-        return pp['id']
-    path = event.get('path', '')
-    parts = [p for p in path.split('/') if p and p not in ('api', 'resources')]
-    return parts[-1] if parts else None
-
-
 def handler(event, context):
     try:
         init_db()
-        method = event.get('httpMethod', 'GET')
+        method = get_method(event)
         item_id = get_id(event)
         qp = event.get('queryStringParameters') or {}
         body = json.loads(event['body']) if event.get('body') else {}
@@ -81,8 +93,8 @@ def handler(event, context):
                 body.get('email', ''),
                 body.get('role', ''),
                 body.get('department', ''),
-                int(body.get('capacity_hours', 40)),
-                int(body.get('allocated_hours', 0)),
+                int(body.get('capacity_hours') or 40),
+                int(body.get('allocated_hours') or 0),
                 body.get('projects', ''),
             ))
             return respond(201, rows[0] if rows else {})

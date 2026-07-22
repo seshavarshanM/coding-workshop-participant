@@ -1,0 +1,276 @@
+import { useState, useEffect, useCallback } from 'react'
+import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
+import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableContainer from '@mui/material/TableContainer'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
+import IconButton from '@mui/material/IconButton'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import Snackbar from '@mui/material/Snackbar'
+import Alert from '@mui/material/Alert'
+import LinearProgress from '@mui/material/LinearProgress'
+import Skeleton from '@mui/material/Skeleton'
+import Grid from '@mui/material/Grid'
+import Tooltip from '@mui/material/Tooltip'
+import AddIcon from '@mui/icons-material/Add'
+import EditIcon from '@mui/icons-material/Edit'
+import DeleteIcon from '@mui/icons-material/Delete'
+import { deliverableService } from '../services/deliverableService'
+import { projectService } from '../services/projectService'
+import StatusChip from '../components/StatusChip'
+
+const EMPTY = {
+  name: '', description: '', project_id: '', project_name: '',
+  status: 'pending', due_date: '', assigned_to: '', completion_percentage: 0
+}
+
+export default function Deliverables() {
+  const [items, setItems] = useState([])
+  const [projects, setProjects] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filterProject, setFilterProject] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY })
+  const [delConfirm, setDelConfirm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
+
+  useEffect(() => {
+    projectService.getAll().then(setProjects).catch(() => {})
+  }, [])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = {}
+      if (filterProject) params.project_id = filterProject
+      if (filterStatus) params.status = filterStatus
+      setItems(await deliverableService.getAll(params))
+    } catch (e) {
+      setSnack({ open: true, msg: e.message, sev: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }, [filterProject, filterStatus])
+
+  useEffect(() => { load() }, [load])
+
+  const openCreate = () => setDialog({ open: true, mode: 'create', data: EMPTY })
+  const openEdit   = (d) => setDialog({
+    open: true, mode: 'edit',
+    data: { ...d, due_date: d.due_date?.split('T')[0] || '' }
+  })
+  const closeDialog = () => setDialog(d => ({ ...d, open: false }))
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const payload = { ...dialog.data }
+      // auto-fill project_name from selected project
+      if (payload.project_id) {
+        const proj = projects.find(p => p.id === payload.project_id)
+        if (proj) payload.project_name = proj.name
+      }
+      if (dialog.mode === 'create') {
+        await deliverableService.create(payload)
+        setSnack({ open: true, msg: 'Deliverable created', sev: 'success' })
+      } else {
+        await deliverableService.update(dialog.data.id, payload)
+        setSnack({ open: true, msg: 'Deliverable updated', sev: 'success' })
+      }
+      closeDialog()
+      load()
+    } catch (e) {
+      setSnack({ open: true, msg: e.message, sev: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await deliverableService.remove(delConfirm.id)
+      setSnack({ open: true, msg: 'Deleted', sev: 'success' })
+      setDelConfirm(null)
+      load()
+    } catch (e) {
+      setSnack({ open: true, msg: e.message, sev: 'error' })
+    }
+  }
+
+  const f = (field) => (e) =>
+    setDialog(d => ({ ...d, data: { ...d.data, [field]: e.target.value } }))
+
+  return (
+    <Box>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700}>Deliverables</Typography>
+          <Typography variant="body2" color="text.secondary">{items.length} total</Typography>
+        </Box>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
+          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
+          New Deliverable
+        </Button>
+      </Box>
+
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel>Project</InputLabel>
+          <Select label="Project" value={filterProject} onChange={e => setFilterProject(e.target.value)}>
+            <MenuItem value="">All projects</MenuItem>
+            {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel>Status</InputLabel>
+          <Select label="Status" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <MenuItem value="">All statuses</MenuItem>
+            {['pending','in_progress','completed','blocked'].map(s => (
+              <MenuItem key={s} value={s}><StatusChip value={s} /></MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
+
+      <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.78rem', bgcolor: '#F8FAFC' } }}>
+                <TableCell>Deliverable</TableCell>
+                <TableCell>Project</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Assigned To</TableCell>
+                <TableCell>Due Date</TableCell>
+                <TableCell>Progress</TableCell>
+                <TableCell align="center">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading
+                ? Array.from({ length: 4 }).map((_, i) => (
+                    <TableRow key={i}>{Array.from({ length: 7 }).map((_, j) => (
+                      <TableCell key={j}><Skeleton variant="text" /></TableCell>
+                    ))}</TableRow>
+                  ))
+                : items.length === 0
+                ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                    No deliverables found.
+                  </TableCell></TableRow>
+                : items.map(d => (
+                    <TableRow key={d.id} hover>
+                      <TableCell>
+                        <Typography fontWeight={600} fontSize="0.85rem">{d.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">{d.description}</Typography>
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>{d.project_name || '—'}</TableCell>
+                      <TableCell><StatusChip value={d.status} /></TableCell>
+                      <TableCell sx={{ fontSize: '0.85rem' }}>{d.assigned_to || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>
+                        {d.due_date ? new Date(d.due_date).toLocaleDateString() : '—'}
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 110 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <LinearProgress
+                            variant="determinate"
+                            value={d.completion_percentage || 0}
+                            sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: '#E2E8F0',
+                              '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 3 } }}
+                          />
+                          <Typography variant="caption">{d.completion_percentage || 0}%</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(d)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                        <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(d)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))
+              }
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      {/* Dialog */}
+      <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>
+        <DialogTitle fontWeight={700}>{dialog.mode === 'create' ? 'New Deliverable' : 'Edit Deliverable'}</DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={2} sx={{ pt: 0.5 }}>
+            <Grid item xs={12}>
+              <TextField fullWidth label="Name *" value={dialog.data.name} onChange={f('name')} />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField fullWidth multiline rows={2} label="Description" value={dialog.data.description} onChange={f('description')} />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Project</InputLabel>
+                <Select label="Project" value={dialog.data.project_id} onChange={f('project_id')}>
+                  <MenuItem value="">None</MenuItem>
+                  {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select label="Status" value={dialog.data.status} onChange={f('status')}>
+                  {['pending','in_progress','completed','blocked'].map(s => (
+                    <MenuItem key={s} value={s}>{s.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase())}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <TextField fullWidth type="date" label="Due date" value={dialog.data.due_date} onChange={f('due_date')} InputLabelProps={{ shrink: true }} />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField fullWidth label="Assigned to" value={dialog.data.assigned_to} onChange={f('assigned_to')} />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={f('completion_percentage')} inputProps={{ min: 0, max: 100 }} />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={closeDialog} sx={{ textTransform: 'none' }}>Cancel</Button>
+          <Button variant="contained" onClick={handleSave} disabled={saving || !dialog.data.name}
+            sx={{ textTransform: 'none', fontWeight: 600 }}>
+            {saving ? 'Saving…' : dialog.mode === 'create' ? 'Create' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete confirm */}
+      <Dialog open={!!delConfirm} onClose={() => setDelConfirm(null)} maxWidth="xs" fullWidth>
+        <DialogTitle fontWeight={700}>Delete deliverable?</DialogTitle>
+        <DialogContent>
+          <Typography>"{delConfirm?.name}" will be permanently deleted.</Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setDelConfirm(null)} sx={{ textTransform: 'none' }}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={handleDelete} sx={{ textTransform: 'none' }}>Delete</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={snack.open} autoHideDuration={3500} onClose={() => setSnack(s => ({ ...s, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+        <Alert severity={snack.sev} variant="filled" sx={{ borderRadius: 2 }}>{snack.msg}</Alert>
+      </Snackbar>
+    </Box>
+  )
+}

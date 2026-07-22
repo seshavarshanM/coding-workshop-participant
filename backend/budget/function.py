@@ -13,6 +13,27 @@ def respond(status, body):
     return {'statusCode': status, 'headers': HEADERS, 'body': json.dumps(body, default=str)}
 
 
+def get_method(event):
+    return (
+        event.get('httpMethod')
+        or (event.get('requestContext') or {}).get('http', {}).get('method')
+        or 'GET'
+    ).upper()
+
+
+def get_path(event):
+    return event.get('path') or event.get('rawPath') or ''
+
+
+def get_id(event):
+    pp = event.get('pathParameters') or {}
+    if pp.get('id'):
+        return pp['id']
+    path = get_path(event)
+    parts = [p for p in path.split('/') if p and p not in ('api', 'budget')]
+    return parts[-1] if parts else None
+
+
 def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS budget_entries (
@@ -29,19 +50,10 @@ def init_db():
     """)
 
 
-def get_id(event):
-    pp = event.get('pathParameters') or {}
-    if pp.get('id'):
-        return pp['id']
-    path = event.get('path', '')
-    parts = [p for p in path.split('/') if p and p not in ('api', 'budget')]
-    return parts[-1] if parts else None
-
-
 def handler(event, context):
     try:
         init_db()
-        method = event.get('httpMethod', 'GET')
+        method = get_method(event)
         item_id = get_id(event)
         qp = event.get('queryStringParameters') or {}
         body = json.loads(event['body']) if event.get('body') else {}
@@ -51,9 +63,7 @@ def handler(event, context):
 
         if method == 'GET':
             if item_id:
-                rows = execute_query(
-                    "SELECT * FROM budget_entries WHERE id = %s", (item_id,)
-                )
+                rows = execute_query("SELECT * FROM budget_entries WHERE id = %s", (item_id,))
                 return respond(200, rows[0]) if rows else respond(404, {'message': 'Not found'})
 
             conds, params = [], []
@@ -70,7 +80,6 @@ def handler(event, context):
                 params or None
             )
 
-            # Append summary totals
             total = execute_query(f"""
                 SELECT
                     COALESCE(SUM(planned_amount),0) AS total_planned,
@@ -95,8 +104,8 @@ def handler(event, context):
                 body.get('project_name', ''),
                 body.get('category', 'General'),
                 body.get('description', ''),
-                float(body.get('planned_amount', 0)),
-                float(body.get('actual_amount', 0)),
+                float(body.get('planned_amount') or 0),
+                float(body.get('actual_amount') or 0),
                 body.get('entry_date') or None,
             ))
             return respond(201, rows[0] if rows else {})

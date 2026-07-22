@@ -13,6 +13,29 @@ def respond(status, body):
     return {'statusCode': status, 'headers': HEADERS, 'body': json.dumps(body, default=str)}
 
 
+def get_method(event):
+    """Supports API Gateway v1 (httpMethod) AND Lambda Function URL v2 (requestContext.http.method)."""
+    return (
+        event.get('httpMethod')
+        or (event.get('requestContext') or {}).get('http', {}).get('method')
+        or 'GET'
+    ).upper()
+
+
+def get_path(event):
+    """Supports v1 (path) and v2 (rawPath)."""
+    return event.get('path') or event.get('rawPath') or ''
+
+
+def get_id(event):
+    pp = event.get('pathParameters') or {}
+    if pp.get('id'):
+        return pp['id']
+    path = get_path(event)
+    parts = [p for p in path.split('/') if p and p not in ('api', 'projects')]
+    return parts[-1] if parts else None
+
+
 def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS projects (
@@ -34,19 +57,10 @@ def init_db():
     """)
 
 
-def get_id(event):
-    pp = event.get('pathParameters') or {}
-    if pp.get('id'):
-        return pp['id']
-    path = event.get('path', '')
-    parts = [p for p in path.split('/') if p and p not in ('api', 'projects')]
-    return parts[-1] if parts else None
-
-
 def handler(event, context):
     try:
         init_db()
-        method = event.get('httpMethod', 'GET')
+        method = get_method(event)
         project_id = get_id(event)
         qp = event.get('queryStringParameters') or {}
         body = json.loads(event['body']) if event.get('body') else {}
@@ -54,7 +68,6 @@ def handler(event, context):
         if method == 'OPTIONS':
             return respond(200, {})
 
-        # GET list / single
         if method == 'GET':
             if project_id:
                 rows = execute_query("SELECT * FROM projects WHERE id = %s", (project_id,))
@@ -74,7 +87,6 @@ def handler(event, context):
             )
             return respond(200, rows)
 
-        # POST create
         if method == 'POST':
             rows = execute_query("""
                 INSERT INTO projects
@@ -90,12 +102,11 @@ def handler(event, context):
                 body.get('manager', ''),
                 body.get('start_date') or None,
                 body.get('end_date') or None,
-                float(body.get('budget_planned', 0)),
+                float(body.get('budget_planned') or 0),
                 body.get('priority', 'medium'),
             ))
             return respond(201, rows[0] if rows else {})
 
-        # PUT update
         if method == 'PUT' and project_id:
             fields = [
                 'name', 'description', 'status', 'department', 'manager',
@@ -118,7 +129,6 @@ def handler(event, context):
             )
             return respond(200, rows[0] if rows else {})
 
-        # DELETE
         if method == 'DELETE' and project_id:
             execute_query("DELETE FROM projects WHERE id = %s", (project_id,))
             return respond(200, {'message': 'Project deleted successfully'})
