@@ -7,133 +7,134 @@ import ListItemText from '@mui/material/ListItemText'
 import Typography from '@mui/material/Typography'
 import Avatar from '@mui/material/Avatar'
 import Divider from '@mui/material/Divider'
-import Button from '@mui/material/Button'
+import Tooltip from '@mui/material/Tooltip'
+import IconButton from '@mui/material/IconButton'
 
-import DashboardIcon from '@mui/icons-material/Dashboard'
-import FolderOpenIcon from '@mui/icons-material/FolderOpen'
-import AssignmentIcon from '@mui/icons-material/Assignment'
-import PeopleAltIcon from '@mui/icons-material/PeopleAlt'
-import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'
-import PersonIcon from '@mui/icons-material/Person'
-import HistoryIcon from '@mui/icons-material/History'
-import LogoutIcon from '@mui/icons-material/Logout'
+import DashboardIcon from '@mui/icons-material/GridViewRounded'
+import FolderIcon from '@mui/icons-material/FolderRounded'
+import AssignmentIcon from '@mui/icons-material/TaskAltRounded'
+import PeopleIcon from '@mui/icons-material/GroupsRounded'
+import WalletIcon from '@mui/icons-material/AccountBalanceWalletRounded'
+import PersonIcon from '@mui/icons-material/PersonRounded'
+import HistoryIcon from '@mui/icons-material/HistoryRounded'
+import LogoutIcon from '@mui/icons-material/LogoutRounded'
 
 import { useAuth } from '../context/AuthContext'
+import { palette } from '../theme/tokens'
 
 const NAV = [
-  { to: '/',             label: 'Dashboard',    Icon: DashboardIcon             },
-  { to: '/projects',     label: 'Projects',     Icon: FolderOpenIcon            },
-  { to: '/deliverables', label: 'Deliverables', Icon: AssignmentIcon            },
-  { to: '/resources',    label: 'Resources',    Icon: PeopleAltIcon             },
-  { to: '/budget',       label: 'Budget',       Icon: AccountBalanceWalletIcon  },
-  { to: '/profile',      label: 'My Profile',   Icon: PersonIcon                },
-  { to: '/activity',     label: 'Activity Log', Icon: HistoryIcon, roles: ['admin', 'manager'] },
+  { section: 'Overview', items: [
+    { to: '/',             label: 'Dashboard',    Icon: DashboardIcon },
+  ]},
+  { section: 'Delivery', items: [
+    { to: '/projects',     label: 'Projects',     Icon: FolderIcon },
+    { to: '/deliverables', label: 'Deliverables', Icon: AssignmentIcon },
+  ]},
+  { section: 'Capacity & cost', items: [
+    { to: '/resources',    label: 'Resources',    Icon: PeopleIcon },
+    { to: '/budget',       label: 'Budget',       Icon: WalletIcon },
+  ]},
+  { section: 'Account', items: [
+    { to: '/profile',      label: 'My profile',   Icon: PersonIcon },
+    { to: '/activity',     label: 'Activity log', Icon: HistoryIcon, roles: ['admin', 'manager'] },
+  ]},
 ]
 
-const SIDEBAR_BG  = '#0F172A'
-const ACTIVE_BG   = 'rgba(99,179,237,0.15)'
-const ACTIVE_TEXT = '#63B3ED'
-const MUTED_TEXT  = '#94A3B8'
+const initials = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 
 export default function Sidebar({ onClose }) {
   const { user, logout } = useAuth()
 
   return (
-    <Box
-      sx={{
-        width: 240,
-        height: '100%',
-        bgcolor: SIDEBAR_BG,
-        display: 'flex',
-        flexDirection: 'column',
-        py: 0,
-      }}
-    >
-      {/* Logo */}
-      <Box sx={{ px: 3, py: 3 }}>
-        <Typography
-          variant="h6"
-          sx={{ color: '#F8FAFC', fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1 }}
-        >
-          ACME<span style={{ color: ACTIVE_TEXT }}>.</span>
+    <Box sx={{
+      width: 244, height: '100%', bgcolor: palette.navBg,
+      display: 'flex', flexDirection: 'column',
+      borderRight: `1px solid ${palette.navBorder}`,
+    }}>
+      {/* Wordmark */}
+      <Box sx={{ px: 2.5, pt: 3, pb: 2.5 }}>
+        <Typography sx={{
+          color: '#FFFFFF', fontWeight: 750, fontSize: '1.0625rem',
+          letterSpacing: '-0.02em', lineHeight: 1,
+        }}>
+          ACME
+          <Box component="span" sx={{ color: '#818CF8' }}> Project Hub</Box>
         </Typography>
-        <Typography variant="caption" sx={{ color: MUTED_TEXT, fontSize: '0.7rem' }}>
-          Project Management
+        <Typography sx={{ color: palette.navText, fontSize: '0.6875rem', mt: 0.5 }}>
+          Delivery, capacity and cost
         </Typography>
       </Box>
 
-      <Divider sx={{ borderColor: 'rgba(255,255,255,0.07)' }} />
+      <Divider sx={{ borderColor: palette.navBorder }} />
 
-      {/* Nav links */}
-      <List sx={{ flex: 1, px: 1.5, py: 1.5 }}>
-        {NAV.filter(item => !item.roles || item.roles.includes(user?.role)).map(({ to, label, Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            style={{ textDecoration: 'none' }}
-            onClick={onClose}
-          >
-            {({ isActive }) => (
-              <ListItemButton
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  px: 1.5,
-                  py: 1,
-                  bgcolor: isActive ? ACTIVE_BG : 'transparent',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <Icon sx={{ fontSize: 20, color: isActive ? ACTIVE_TEXT : MUTED_TEXT }} />
-                </ListItemIcon>
-                <ListItemText
-                  primary={label}
-                  primaryTypographyProps={{
-                    fontSize: '0.875rem',
-                    fontWeight: isActive ? 600 : 400,
-                    color: isActive ? ACTIVE_TEXT : MUTED_TEXT,
-                  }}
-                />
-              </ListItemButton>
-            )}
-          </NavLink>
-        ))}
-      </List>
+      {/* Grouped navigation — sections name what the tool actually does */}
+      <Box sx={{ flex: 1, overflowY: 'auto', px: 1.25, py: 2 }}>
+        {NAV.map(({ section, items }) => {
+          const visible = items.filter(i => !i.roles || i.roles.includes(user?.role))
+          if (visible.length === 0) return null
+          return (
+            <Box key={section} sx={{ mb: 2 }}>
+              <Typography sx={{
+                px: 1.25, mb: 0.75, color: '#5A6478',
+                fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}>
+                {section}
+              </Typography>
+              <List disablePadding>
+                {visible.map(({ to, label, Icon }) => (
+                  <NavLink key={to} to={to} end={to === '/'} onClick={onClose}
+                    style={{ textDecoration: 'none' }}>
+                    {({ isActive }) => (
+                      <ListItemButton sx={{
+                        borderRadius: 1.5, mb: 0.25, px: 1.25, py: 0.75, minHeight: 36,
+                        bgcolor: isActive ? palette.navActiveBg : 'transparent',
+                        position: 'relative',
+                        '&:hover': { bgcolor: isActive ? palette.navActiveBg : 'rgba(255,255,255,0.04)' },
+                        '&::before': isActive ? {
+                          content: '""', position: 'absolute', left: -5, top: 8, bottom: 8,
+                          width: 3, borderRadius: 2, bgcolor: '#818CF8',
+                        } : {},
+                      }}>
+                        <ListItemIcon sx={{ minWidth: 30 }}>
+                          <Icon sx={{ fontSize: 18, color: isActive ? palette.navTextActive : palette.navText }} />
+                        </ListItemIcon>
+                        <ListItemText primary={label} primaryTypographyProps={{
+                          fontSize: '0.8125rem',
+                          fontWeight: isActive ? 600 : 500,
+                          color: isActive ? palette.navTextActive : palette.navText,
+                        }} />
+                      </ListItemButton>
+                    )}
+                  </NavLink>
+                ))}
+              </List>
+            </Box>
+          )
+        })}
+      </Box>
 
-      <Divider sx={{ borderColor: 'rgba(255,255,255,0.07)' }} />
+      <Divider sx={{ borderColor: palette.navBorder }} />
 
-      {/* User footer */}
-      <Box sx={{ px: 2, py: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-          <Avatar sx={{ width: 32, height: 32, bgcolor: '#1565C0', fontSize: '0.8rem' }}>
-            {user?.name?.charAt(0) || 'U'}
-          </Avatar>
-          <Box>
-            <Typography sx={{ color: '#F8FAFC', fontSize: '0.8rem', fontWeight: 600, lineHeight: 1.2 }}>
-              {user?.name}
-            </Typography>
-            <Typography sx={{ color: MUTED_TEXT, fontSize: '0.7rem', textTransform: 'capitalize' }}>
-              {user?.role}{user?.employee_id ? ` · ${user.employee_id}` : ''}
-            </Typography>
-          </Box>
+      {/* Signed-in identity */}
+      <Box sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Avatar sx={{ width: 32, height: 32, bgcolor: '#4F46E5', fontSize: '0.75rem' }}>
+          {initials(user?.name)}
+        </Avatar>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography noWrap sx={{ color: '#E8EAEE', fontSize: '0.8125rem', fontWeight: 600, lineHeight: 1.3 }}>
+            {user?.name}
+          </Typography>
+          <Typography noWrap sx={{ color: '#5A6478', fontSize: '0.6875rem' }}>
+            {user?.employee_id} · {user?.role}
+          </Typography>
         </Box>
-        <Button
-          fullWidth
-          size="small"
-          startIcon={<LogoutIcon sx={{ fontSize: 16 }} />}
-          onClick={logout}
-          sx={{
-            color: MUTED_TEXT,
-            justifyContent: 'flex-start',
-            textTransform: 'none',
-            fontSize: '0.8rem',
-            '&:hover': { color: '#F87171', bgcolor: 'rgba(248,113,113,0.08)' },
-          }}
-        >
-          Sign out
-        </Button>
+        <Tooltip title="Sign out">
+          <IconButton size="small" onClick={logout}
+            sx={{ color: palette.navText, '&:hover': { color: '#FDA29B', bgcolor: 'rgba(253,162,155,0.08)' } }}>
+            <LogoutIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
       </Box>
     </Box>
   )

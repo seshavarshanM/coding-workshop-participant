@@ -14,97 +14,170 @@ import TableRow from '@mui/material/TableRow'
 import LinearProgress from '@mui/material/LinearProgress'
 import Skeleton from '@mui/material/Skeleton'
 import Alert from '@mui/material/Alert'
-import Chip from '@mui/material/Chip'
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
-import FolderOpenIcon from '@mui/icons-material/FolderOpen'
-import WarningAmberIcon from '@mui/icons-material/WarningAmber'
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
-import AssignmentIcon from '@mui/icons-material/Assignment'
-import PeopleAltIcon from '@mui/icons-material/PeopleAlt'
+import Avatar from '@mui/material/Avatar'
+import Tooltip from '@mui/material/Tooltip'
+import Divider from '@mui/material/Divider'
+import ArrowForwardIcon from '@mui/icons-material/ArrowForwardRounded'
+import FolderIcon from '@mui/icons-material/FolderRounded'
+import WarningIcon from '@mui/icons-material/ReportProblemRounded'
+import WalletIcon from '@mui/icons-material/AccountBalanceWalletRounded'
+import PeopleIcon from '@mui/icons-material/GroupsRounded'
+import TaskIcon from '@mui/icons-material/TaskAltRounded'
+import BlockIcon from '@mui/icons-material/BlockRounded'
+
 import { projectService } from '../services/projectService'
 import { budgetService } from '../services/budgetService'
 import { deliverableService } from '../services/deliverableService'
-import { resourceService } from '../services/resourceService'
+import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
+import { isAtRisk, riskReason } from '../utils/risk'
+import { isBlocked, blockReason } from '../utils/dependencies'
 import StatusChip from '../components/StatusChip'
-import { isAtRisk } from '../utils/risk'
+import PageHeader from '../components/PageHeader'
+import MetricCard from '../components/MetricCard'
+import { palette, shadow } from '../theme/tokens'
 
-function KPICard({ title, value, sub, Icon, color, bg }) {
+const money = n => `$${Number(n || 0).toLocaleString()}`
+const initials = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+const avatarColor = (n = '') =>
+  ['#4F46E5', '#7A5AF8', '#0E9384', '#DD2590', '#175CD3', '#B54708'][(n.charCodeAt(0) || 0) % 6]
+
+function Progress({ value }) {
   return (
-    <Paper elevation={0}
-      sx={{ p: 3, borderRadius: 3, border: '1px solid', borderColor: 'divider',
-        display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-      <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: bg }}>
-        <Icon sx={{ color, fontSize: 24 }} />
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 108 }}>
+      <LinearProgress variant="determinate" value={value || 0} sx={{ flex: 1 }} />
+      <Typography variant="caption" sx={{ minWidth: 30, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+        {value || 0}%
+      </Typography>
+    </Box>
+  )
+}
+
+function SectionCard({ title, description, action, children }) {
+  return (
+    <Paper sx={{ overflow: 'hidden', height: '100%' }}>
+      <Box sx={{ px: 2.5, py: 2, display: 'flex', justifyContent: 'space-between',
+        alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+        <Box>
+          <Typography variant="subtitle1">{title}</Typography>
+          {description && <Typography variant="caption">{description}</Typography>}
+        </Box>
+        {action}
       </Box>
-      <Box>
-        <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1 }}>{value}</Typography>
-        <Typography variant="body2" sx={{ fontWeight: 600, mt: 0.3 }}>{title}</Typography>
-        {sub && <Typography variant="caption" color="text.secondary">{sub}</Typography>}
-      </Box>
+      <Divider />
+      {children}
     </Paper>
   )
 }
 
-function ProjectsTable({ rows, loading, navigate, title = 'Recent Projects' }) {
+function EmptyState({ children }) {
   return (
-    <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-      <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography fontWeight={700}>{title}</Typography>
-        <Button size="small" endIcon={<ArrowForwardIcon />} onClick={() => navigate('/projects')} sx={{ textTransform: 'none' }}>
-          View all
-        </Button>
-      </Box>
-      <TableContainer>
-        <Table size="small">
-          <TableHead>
-            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.78rem', bgcolor: '#F8FAFC' } }}>
-              <TableCell>Project</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Priority</TableCell>
-              <TableCell>Manager</TableCell>
-              <TableCell>Progress</TableCell>
-              <TableCell>Deadline</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading
-              ? Array.from({ length: 4 }).map((_, i) => (
-                  <TableRow key={i}>{Array.from({ length: 6 }).map((_, j) => (
-                    <TableCell key={j}><Skeleton variant="text" width="80%" /></TableCell>
-                  ))}</TableRow>
-                ))
-              : rows.length === 0
-              ? <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                  No projects to show.
-                </TableCell></TableRow>
-              : rows.map(p => (
-                  <TableRow key={p.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/projects/${p.id}`)}>
-                    <TableCell>
-                      <Typography fontWeight={600} fontSize="0.85rem">{p.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">{p.department}</Typography>
-                    </TableCell>
-                    <TableCell><StatusChip value={p.status} /></TableCell>
-                    <TableCell><StatusChip value={p.priority} /></TableCell>
-                    <TableCell sx={{ fontSize: '0.85rem' }}>{p.manager || '—'}</TableCell>
-                    <TableCell sx={{ minWidth: 120 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <LinearProgress variant="determinate" value={p.completion_percentage || 0}
-                          sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: '#E2E8F0',
-                            '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 3 } }} />
-                        <Typography variant="caption" sx={{ minWidth: 32 }}>{p.completion_percentage || 0}%</Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>
+    <Box sx={{ py: 5, textAlign: 'center' }}>
+      <Typography variant="body2" color="text.secondary">{children}</Typography>
+    </Box>
+  )
+}
+
+function ProjectsTable({ rows, loading, navigate }) {
+  return (
+    <TableContainer>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>Project</TableCell>
+            <TableCell>Status</TableCell>
+            <TableCell>Owner</TableCell>
+            <TableCell>Progress</TableCell>
+            <TableCell align="right">Deadline</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {loading
+            ? Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>{Array.from({ length: 5 }).map((_, j) => (
+                  <TableCell key={j}><Skeleton variant="text" width="70%" /></TableCell>
+                ))}</TableRow>
+              ))
+            : rows.length === 0
+            ? <TableRow><TableCell colSpan={5}><EmptyState>Nothing here yet.</EmptyState></TableCell></TableRow>
+            : rows.map(p => (
+                <TableRow key={p.id} hover sx={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/projects/${p.id}`)}>
+                  <TableCell>
+                    <Typography variant="subtitle2" noWrap sx={{ maxWidth: 240 }}>{p.name}</Typography>
+                    <Typography variant="caption">{p.department}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <StatusChip value={p.status} />
+                      {isAtRisk(p) && p.status !== 'at_risk' && (
+                        <Tooltip title={riskReason(p)}>
+                          <WarningIcon sx={{ fontSize: 15, color: '#F79009' }} />
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar sx={{ width: 22, height: 22, fontSize: '0.625rem',
+                        bgcolor: avatarColor(p.manager) }}>
+                        {initials(p.manager)}
+                      </Avatar>
+                      <Typography variant="body2" noWrap>{p.manager || '—'}</Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell><Progress value={p.completion_percentage} /></TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {p.end_date ? new Date(p.end_date).toLocaleDateString() : '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Paper>
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  )
+}
+
+/** Ranked list of what needs attention — the reason this dashboard exists. */
+function AttentionList({ projects, deliverables, navigate, loading }) {
+  if (loading) {
+    return <Box sx={{ p: 2.5 }}>{[1,2,3].map(i => <Skeleton key={i} height={38} />)}</Box>
+  }
+
+  const atRisk = projects.filter(isAtRisk)
+  const blocked = deliverables.filter(d => isBlocked(d, deliverables))
+
+  if (atRisk.length === 0 && blocked.length === 0) {
+    return <EmptyState>Nothing needs attention. Every project is on track.</EmptyState>
+  }
+
+  return (
+    <Box sx={{ p: 1.25 }}>
+      {atRisk.slice(0, 4).map(p => (
+        <Box key={p.id} onClick={() => navigate(`/projects/${p.id}`)}
+          sx={{ display: 'flex', gap: 1.25, p: 1.25, borderRadius: 1.5, cursor: 'pointer',
+            '&:hover': { bgcolor: palette.surfaceAlt } }}>
+          <WarningIcon sx={{ fontSize: 17, color: '#F79009', mt: 0.25, flexShrink: 0 }} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle2" noWrap>{p.name}</Typography>
+            <Typography variant="caption">{riskReason(p)}</Typography>
+          </Box>
+        </Box>
+      ))}
+      {blocked.slice(0, 4).map(d => (
+        <Box key={d.id} onClick={() => navigate('/deliverables')}
+          sx={{ display: 'flex', gap: 1.25, p: 1.25, borderRadius: 1.5, cursor: 'pointer',
+            '&:hover': { bgcolor: palette.surfaceAlt } }}>
+          <BlockIcon sx={{ fontSize: 17, color: '#F04438', mt: 0.25, flexShrink: 0 }} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle2" noWrap>{d.name}</Typography>
+            <Typography variant="caption">{blockReason(d, deliverables)}</Typography>
+          </Box>
+        </Box>
+      ))}
+    </Box>
   )
 }
 
@@ -114,24 +187,19 @@ export default function Dashboard() {
   const [projects, setProjects] = useState([])
   const [budget, setBudget] = useState({ total_planned: 0, total_actual: 0 })
   const [deliverables, setDeliverables] = useState([])
-  const [resources, setResources] = useState([])
+  const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     Promise.all([
-      projectService.getAll(),
-      budgetService.getAll(),
-      deliverableService.getAll(),
-      resourceService.getAll(),
+      projectService.getAll(), budgetService.getAll(),
+      deliverableService.getAll(), peopleService.getAll(),
     ])
       .then(([p, b, d, r]) => {
-        setProjects(p)
-        if (b?.summary) setBudget(b.summary)
-        setDeliverables(d)
-        setResources(r)
+        setProjects(p); if (b?.summary) setBudget(b.summary); setDeliverables(d); setPeople(r)
       })
-      .catch(e => setError(e.message))
+      .catch(e => setError(e?.response?.data?.message || e.message))
       .finally(() => setLoading(false))
   }, [])
 
@@ -139,186 +207,158 @@ export default function Dashboard() {
     return <Alert severity="warning" sx={{ mt: 2 }}>Could not load dashboard data: {error}</Alert>
   }
 
-  // ════════════════════════ MEMBER VIEW ════════════════════════
-  // Their assigned deliverables and what's due soon.
+  const firstName = user?.name?.split(' ')[0] || ''
+
+  // ── MEMBER ──────────────────────────────────────────────────────────
   if (user?.role === 'member') {
     const mine = deliverables.filter(d => d.assigned_to === user.name)
     const done = mine.filter(d => d.status === 'completed').length
-    const inProgress = mine.filter(d => d.status === 'in_progress').length
-    const upcoming = [...mine]
-      .filter(d => d.status !== 'completed' && d.due_date)
+    const blocked = mine.filter(d => isBlocked(d, deliverables)).length
+    const upcoming = mine.filter(d => d.status !== 'completed' && d.due_date)
       .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
 
     return (
       <Box>
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="h5" fontWeight={700}>My Work</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Hello {user.name.split(' ')[0]} — here's what's on your plate
-          </Typography>
-        </Box>
+        <PageHeader eyebrow="My work" title={`Good to see you, ${firstName}`}
+          description="Everything currently assigned to you, soonest first." />
 
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid item xs={12} sm={4}>
-            <KPICard title="My Deliverables" value={loading ? '—' : mine.length} sub="Assigned to me"
-              Icon={AssignmentIcon} color="#1565C0" bg="#DBEAFE" />
+            <MetricCard label="Assigned to me" value={loading ? '—' : mine.length}
+              footnote={`${done} completed`} Icon={TaskIcon} />
           </Grid>
           <Grid item xs={12} sm={4}>
-            <KPICard title="In Progress" value={loading ? '—' : inProgress} sub={`${done} completed`}
-              Icon={CheckCircleOutlineIcon} color="#166534" bg="#DCFCE7" />
+            <MetricCard label="Still open" value={loading ? '—' : upcoming.length}
+              footnote="Not yet finished" tone="accent" Icon={FolderIcon} />
           </Grid>
           <Grid item xs={12} sm={4}>
-            <KPICard title="Due Soon" value={loading ? '—' : upcoming.length} sub="Not yet completed"
-              Icon={WarningAmberIcon} color="#92400E" bg="#FEF3C7" />
+            <MetricCard label="Waiting on others" value={loading ? '—' : blocked}
+              footnote={blocked ? 'A dependency is unfinished' : 'Nothing is blocked'}
+              tone={blocked ? 'critical' : 'positive'} Icon={BlockIcon} />
           </Grid>
         </Grid>
 
-        <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-          <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography fontWeight={700}>My Upcoming Deliverables</Typography>
-            <Button size="small" endIcon={<ArrowForwardIcon />} onClick={() => navigate('/deliverables')} sx={{ textTransform: 'none' }}>
-              All deliverables
-            </Button>
-          </Box>
+        <SectionCard title="What's next" description="Your deliverables by due date"
+          action={<Button size="small" endIcon={<ArrowForwardIcon />}
+            onClick={() => navigate('/deliverables')}>See all</Button>}>
           <TableContainer>
             <Table size="small">
               <TableHead>
-                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.78rem', bgcolor: '#F8FAFC' } }}>
+                <TableRow>
                   <TableCell>Deliverable</TableCell>
                   <TableCell>Project</TableCell>
                   <TableCell>Status</TableCell>
-                  <TableCell>Due Date</TableCell>
                   <TableCell>Progress</TableCell>
+                  <TableCell align="right">Due</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {upcoming.length === 0
-                  ? <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                      Nothing pending — all caught up! 🎉
-                    </TableCell></TableRow>
+                  ? <TableRow><TableCell colSpan={5}>
+                      <EmptyState>Nothing open right now.</EmptyState></TableCell></TableRow>
                   : upcoming.map(d => (
                       <TableRow key={d.id} hover>
-                        <TableCell><Typography fontWeight={600} fontSize="0.85rem">{d.name}</Typography></TableCell>
-                        <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>{d.project_name || '—'}</TableCell>
-                        <TableCell><StatusChip value={d.status} /></TableCell>
-                        <TableCell sx={{ fontSize: '0.82rem' }}>
-                          {new Date(d.due_date).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell sx={{ minWidth: 110 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <LinearProgress variant="determinate" value={d.completion_percentage || 0}
-                              sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: '#E2E8F0',
-                                '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 3 } }} />
-                            <Typography variant="caption">{d.completion_percentage || 0}%</Typography>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                            <Typography variant="subtitle2">{d.name}</Typography>
+                            {isBlocked(d, deliverables) && (
+                              <Tooltip title={blockReason(d, deliverables)}>
+                                <BlockIcon sx={{ fontSize: 14, color: '#F04438' }} />
+                              </Tooltip>
+                            )}
                           </Box>
+                        </TableCell>
+                        <TableCell><Typography variant="body2" color="text.secondary">{d.project_name || '—'}</Typography></TableCell>
+                        <TableCell><StatusChip value={d.status} /></TableCell>
+                        <TableCell><Progress value={d.completion_percentage} /></TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {new Date(d.due_date).toLocaleDateString()}
+                          </Typography>
                         </TableCell>
                       </TableRow>
                     ))}
               </TableBody>
             </Table>
           </TableContainer>
-        </Paper>
+        </SectionCard>
       </Box>
     )
   }
 
-  // ════════════════════════ MANAGER VIEW ════════════════════════
-  // Scoped to projects they manage (matched by manager name).
-  if (user?.role === 'manager') {
-    const myProjects = projects.filter(p => p.manager === user.name)
-    const scope = myProjects.length > 0 ? myProjects : projects  // fallback: show all with note
-    const scoped = myProjects.length > 0
-    const active = scope.filter(p => p.status === 'active').length
-    const atRisk = scope.filter(isAtRisk).length
-    const myProjectNames = new Set(scope.map(p => p.name))
-    const teamDeliverables = deliverables.filter(d => myProjectNames.has(d.project_name))
-    const overdue = teamDeliverables.filter(d =>
-      d.status !== 'completed' && d.due_date && new Date(d.due_date) < new Date()).length
+  // ── MANAGER ─────────────────────────────────────────────────────────
+  const isManager = user?.role === 'manager'
+  const scope = isManager ? projects.filter(p => p.manager === user.name) : projects
+  const scopedNames = new Set(scope.map(p => p.name))
+  const scopedDeliverables = isManager
+    ? deliverables.filter(d => scopedNames.has(d.project_name))
+    : deliverables
 
-    return (
-      <Box>
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="h5" fontWeight={700}>Manager Dashboard</Typography>
-          <Typography variant="body2" color="text.secondary">
-            {scoped
-              ? `Projects managed by ${user.name}`
-              : `No projects have you as manager yet — showing all projects. Set "Manager" to "${user.name}" on your projects to scope this view.`}
-          </Typography>
-        </Box>
+  const active = scope.filter(p => p.status === 'active').length
+  const atRiskCount = scope.filter(isAtRisk).length
+  const blockedCount = scopedDeliverables.filter(d => isBlocked(d, deliverables)).length
+  const planned = Number(budget.total_planned) || 0
+  const actual = Number(budget.total_actual) || 0
+  const budgetPct = planned > 0 ? Math.round((actual / planned) * 100) : 0
 
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={12} sm={6} lg={3}>
-            <KPICard title="My Projects" value={loading ? '—' : scope.length} sub={scoped ? 'Managed by me' : 'All projects'}
-              Icon={FolderOpenIcon} color="#1565C0" bg="#DBEAFE" />
-          </Grid>
-          <Grid item xs={12} sm={6} lg={3}>
-            <KPICard title="Active" value={loading ? '—' : active} sub="In flight"
-              Icon={CheckCircleOutlineIcon} color="#166534" bg="#DCFCE7" />
-          </Grid>
-          <Grid item xs={12} sm={6} lg={3}>
-            <KPICard title="At Risk" value={loading ? '—' : atRisk} sub="Incl. auto-detected"
-              Icon={WarningAmberIcon} color="#92400E" bg="#FEF3C7" />
-          </Grid>
-          <Grid item xs={12} sm={6} lg={3}>
-            <KPICard title="Overdue Deliverables" value={loading ? '—' : overdue} sub="Past due, not complete"
-              Icon={AssignmentIcon} color="#991B1B" bg="#FEE2E2" />
-          </Grid>
-        </Grid>
-
-        <ProjectsTable rows={scope.slice(0, 8)} loading={loading} navigate={navigate}
-          title={scoped ? 'My Projects' : 'All Projects'} />
-      </Box>
-    )
-  }
-
-  // ════════════════════════ ADMIN VIEW ════════════════════════
-  // Org-wide: everything, including resource utilization.
-  const total = projects.length
-  const active = projects.filter(p => p.status === 'active').length
-  const atRisk = projects.filter(isAtRisk).length
-  const completed = projects.filter(p => p.status === 'completed').length
-  const budgetPct = budget.total_planned > 0
-    ? Math.round((Number(budget.total_actual) / Number(budget.total_planned)) * 100) : 0
-  const overAllocated = resources.filter(r => Number(r.allocated_hours) > Number(r.capacity_hours)).length
-  const totalCapacity = resources.reduce((s, r) => s + Number(r.capacity_hours || 0), 0)
-  const totalAllocated = resources.reduce((s, r) => s + Number(r.allocated_hours || 0), 0)
-  const utilization = totalCapacity > 0 ? Math.round((totalAllocated / totalCapacity) * 100) : 0
+  const capacity = people.reduce((s, r) => s + Number(r.capacity_hours || 0), 0)
+  const allocated = people.reduce((s, r) => s + Number(r.allocated_hours || 0), 0)
+  const utilisation = capacity > 0 ? Math.round((allocated / capacity) * 100) : 0
+  const overAllocated = people.filter(r => Number(r.allocated_hours) > Number(r.capacity_hours)).length
 
   return (
     <Box>
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700}>Organization Dashboard</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Org-wide view across all departments and projects
-          </Typography>
-        </Box>
-        <Chip label="ADMIN" size="small" sx={{ fontWeight: 700, bgcolor: '#EDE9FE', color: '#5B21B6' }} />
-      </Box>
+      <PageHeader
+        eyebrow={isManager ? 'My portfolio' : 'Organisation'}
+        title={isManager ? `Good to see you, ${firstName}` : 'Portfolio overview'}
+        description={isManager
+          ? 'Projects you own, and what needs your attention today.'
+          : 'Delivery, capacity and spend across every department.'}
+      />
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
+      <Grid container spacing={2} sx={{ mb: 2.5 }}>
         <Grid item xs={12} sm={6} lg={3}>
-          <KPICard title="Total Projects" value={loading ? '—' : total} sub={`${active} active · ${completed} completed`}
-            Icon={FolderOpenIcon} color="#1565C0" bg="#DBEAFE" />
+          <MetricCard label={isManager ? 'My projects' : 'Projects'}
+            value={loading ? '—' : scope.length}
+            footnote={`${active} active`} Icon={FolderIcon} />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>
-          <KPICard title="At Risk" value={loading ? '—' : atRisk} sub="Incl. auto-detected"
-            Icon={WarningAmberIcon} color="#92400E" bg="#FEF3C7" />
+          <MetricCard label="Needs attention" value={loading ? '—' : atRiskCount}
+            footnote={atRiskCount ? 'Behind schedule or overdue' : 'All on track'}
+            tone={atRiskCount ? 'warning' : 'positive'} Icon={WarningIcon} />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>
-          <KPICard title="Budget Used" value={loading ? '—' : `${budgetPct}%`}
-            sub={`$${Number(budget.total_actual).toLocaleString()} of $${Number(budget.total_planned).toLocaleString()}`}
-            Icon={AttachMoneyIcon} color="#5B21B6" bg="#EDE9FE" />
+          <MetricCard label="Budget used" value={`${budgetPct}%`} progress={budgetPct}
+            footnote={`${money(actual)} of ${money(planned)}`}
+            tone={budgetPct > 90 ? 'critical' : budgetPct > 75 ? 'warning' : 'accent'}
+            Icon={WalletIcon} />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>
-          <KPICard title="Team Utilization" value={loading ? '—' : `${utilization}%`}
-            sub={overAllocated > 0 ? `⚠ ${overAllocated} over-allocated` : 'Capacity healthy'}
-            Icon={PeopleAltIcon} color={overAllocated > 0 ? '#991B1B' : '#166534'}
-            bg={overAllocated > 0 ? '#FEE2E2' : '#DCFCE7'} />
+          <MetricCard label="Team utilisation" value={`${utilisation}%`} progress={utilisation}
+            footnote={overAllocated ? `${overAllocated} over capacity` : 'Capacity is healthy'}
+            tone={overAllocated ? 'critical' : 'positive'} Icon={PeopleIcon} />
         </Grid>
       </Grid>
 
-      <ProjectsTable rows={[...projects].slice(0, 8)} loading={loading} navigate={navigate} />
+      <Grid container spacing={2.5}>
+        <Grid item xs={12} lg={7}>
+          <SectionCard
+            title={isManager ? 'My projects' : 'All projects'}
+            description="Ordered by most recently created"
+            action={<Button size="small" endIcon={<ArrowForwardIcon />}
+              onClick={() => navigate('/projects')}>See all</Button>}>
+            <ProjectsTable rows={scope.slice(0, 6)} loading={loading} navigate={navigate} />
+          </SectionCard>
+        </Grid>
+
+        <Grid item xs={12} lg={5}>
+          <SectionCard title="Needs attention"
+            description={`${atRiskCount} at risk · ${blockedCount} blocked`}>
+            <AttentionList projects={scope} deliverables={scopedDeliverables}
+              navigate={navigate} loading={loading} />
+          </SectionCard>
+        </Grid>
+      </Grid>
     </Box>
   )
 }

@@ -1,36 +1,44 @@
-import Chip from '@mui/material/Chip'
+import Box from '@mui/material/Box'
+import { statusToken } from '../theme/tokens'
 
-const STATUS_MAP = {
-  // Project statuses
-  planning:   { label: 'Planning',    color: '#64748B', bg: '#F1F5F9' },
-  active:     { label: 'Active',      color: '#166534', bg: '#DCFCE7' },
-  at_risk:    { label: 'At Risk',     color: '#92400E', bg: '#FEF3C7' },
-  on_hold:    { label: 'On Hold',     color: '#1E40AF', bg: '#DBEAFE' },
-  completed:  { label: 'Completed',   color: '#5B21B6', bg: '#EDE9FE' },
-  // Deliverable statuses
-  pending:    { label: 'Pending',     color: '#64748B', bg: '#F1F5F9' },
-  in_progress:{ label: 'In Progress', color: '#166534', bg: '#DCFCE7' },
-  blocked:    { label: 'Blocked',     color: '#991B1B', bg: '#FEE2E2' },
-  // Priority
-  low:        { label: 'Low',         color: '#166534', bg: '#DCFCE7' },
-  medium:     { label: 'Medium',      color: '#92400E', bg: '#FEF3C7' },
-  high:       { label: 'High',        color: '#C2410C', bg: '#FFEDD5' },
-  critical:   { label: 'Critical',    color: '#991B1B', bg: '#FEE2E2' },
+const LABEL = {
+  planning: 'Planning', active: 'Active', at_risk: 'At risk', on_hold: 'On hold',
+  completed: 'Completed', pending: 'Pending', in_progress: 'In progress', blocked: 'Blocked',
+  low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical',
+  admin: 'Admin', manager: 'Manager', member: 'Member',
 }
 
+/**
+ * Status is the most important signal in this interface, so it gets a
+ * consistent treatment everywhere: a coloured dot carries the meaning at a
+ * glance, the label confirms it. The dot also keeps states distinguishable
+ * for anyone who can't rely on colour alone.
+ */
 export default function StatusChip({ value, size = 'small' }) {
-  const cfg = STATUS_MAP[value] || { label: value, color: '#374151', bg: '#F3F4F6' }
+  const t = statusToken(value)
+  const label = LABEL[value] || value
+  const small = size === 'small'
+
   return (
-    <Chip
-      label={cfg.label}
-      size={size}
+    <Box
+      component="span"
       sx={{
+        display: 'inline-flex', alignItems: 'center', gap: 0.75,
+        px: small ? 0.875 : 1.125,
+        py: small ? 0.25 : 0.5,
+        borderRadius: 1,
+        bgcolor: t.bg,
+        color: t.fg,
+        fontSize: small ? '0.6875rem' : '0.75rem',
         fontWeight: 600,
-        fontSize: '0.72rem',
-        color: cfg.color,
-        bgcolor: cfg.bg,
-        border: 'none',
+        lineHeight: 1.6,
+        whiteSpace: 'nowrap',
       }}
-    />
+    >
+      <Box component="span" sx={{
+        width: 6, height: 6, borderRadius: '50%', bgcolor: t.dot, flexShrink: 0,
+      }} />
+      {label}
+    </Box>
   )
 }

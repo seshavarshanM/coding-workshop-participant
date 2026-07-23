@@ -6,26 +6,22 @@ import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
-import Divider from '@mui/material/Divider'
 import CircularProgress from '@mui/material/CircularProgress'
-import Chip from '@mui/material/Chip'
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import Divider from '@mui/material/Divider'
+import Avatar from '@mui/material/Avatar'
 import { useAuth } from '../context/AuthContext'
+import { palette, shadow } from '../theme/tokens'
 
-const DEMO_ACCOUNTS = [
-  { label: 'Admin',   name: 'Alice Fernandes', email: 'alice.admin@acme.com',  password: 'Admin@123',   color: '#A78BFA' },
-  { label: 'Manager', name: 'Michael Rao',     email: 'michael.rao@acme.com',  password: 'Manager@123', color: '#60A5FA' },
-  { label: 'Member',  name: 'Sana Kapoor',     email: 'sana.kapoor@acme.com',  password: 'Member@123',  color: '#94A3B8' },
+const DEMO = [
+  { role: 'Admin',   name: 'Alice Fernandes', title: 'Head of PMO',
+    email: 'alice.admin@acme.com',  password: 'Admin@123',   color: '#7A5AF8' },
+  { role: 'Manager', name: 'Michael Rao',     title: 'Engineering Manager',
+    email: 'michael.rao@acme.com',  password: 'Manager@123', color: '#4F46E5' },
+  { role: 'Member',  name: 'Sana Kapoor',     title: 'Senior Backend Engineer',
+    email: 'sana.kapoor@acme.com',  password: 'Member@123',  color: '#0E9384' },
 ]
 
-const fieldSx = {
-  '& .MuiOutlinedInput-root': {
-    '& fieldset': { borderColor: 'rgba(255,255,255,0.12)' },
-    '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.25)' },
-    '&.Mui-focused fieldset': { borderColor: '#1565C0' },
-    bgcolor: 'rgba(255,255,255,0.04)',
-  },
-}
+const initials = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 
 export default function Login() {
   const { login } = useAuth()
@@ -34,118 +30,100 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
+  const change = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
   const submit = async (email, password) => {
-    setError('')
-    setLoading(true)
-    const result = await login(email, password)
+    setError(''); setLoading(true)
+    const res = await login(email, password)
     setLoading(false)
-    if (result.success) navigate('/', { replace: true })
-    else setError(result.message)
-  }
-
-  const handleSubmit = e => {
-    e.preventDefault()
-    submit(form.email, form.password)
+    if (res.success) navigate('/', { replace: true })
+    else setError(res.message)
   }
 
   return (
-    <Box sx={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      bgcolor: '#0F172A', p: 2,
-    }}>
-      <Box sx={{ width: '100%', maxWidth: 430 }}>
-        <Box sx={{ textAlign: 'center', mb: 3 }}>
-          <Typography variant="h4" sx={{ color: '#F8FAFC', fontWeight: 800, letterSpacing: '-1px' }}>
-            ACME<span style={{ color: '#63B3ED' }}>.</span>
+    <Box sx={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
+      {/* Left: the product's own claim, stated plainly */}
+      <Box sx={{
+        display: { xs: 'none', md: 'flex' }, flexDirection: 'column', justifyContent: 'space-between',
+        bgcolor: palette.navBg, p: 6, color: '#fff',
+      }}>
+        <Typography sx={{ fontWeight: 750, fontSize: '1.0625rem', letterSpacing: '-0.02em' }}>
+          ACME<Box component="span" sx={{ color: '#818CF8' }}> Project Hub</Box>
+        </Typography>
+
+        <Box sx={{ maxWidth: 420 }}>
+          <Typography sx={{
+            fontSize: '2.25rem', fontWeight: 700, letterSpacing: '-0.035em',
+            lineHeight: 1.15, mb: 2,
+          }}>
+            Every project, every hour, every rupee —
+            <Box component="span" sx={{ color: '#818CF8' }}> in one place.</Box>
           </Typography>
-          <Typography sx={{ color: '#94A3B8', mt: 0.5, fontSize: '0.9rem' }}>
-            Project Management Platform
+          <Typography sx={{ color: '#98A2B3', fontSize: '0.9375rem', lineHeight: 1.6 }}>
+            Track delivery progress, spot projects slipping before the deadline,
+            see who is over-allocated, and keep spend against plan honest.
           </Typography>
         </Box>
 
-        <Paper elevation={0} sx={{
-          p: 4, borderRadius: 3, border: '1px solid rgba(255,255,255,0.08)', bgcolor: '#1E293B',
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
-            <Box sx={{
-              width: 36, height: 36, borderRadius: 2, bgcolor: '#1565C0',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <LockOutlinedIcon sx={{ color: '#fff', fontSize: 18 }} />
+        <Box sx={{ display: 'flex', gap: 4 }}>
+          {[['6', 'Projects tracked'], ['10', 'Team members'], ['4', 'Departments']].map(([n, l]) => (
+            <Box key={l}>
+              <Typography sx={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.02em' }}>{n}</Typography>
+              <Typography sx={{ color: '#667085', fontSize: '0.75rem' }}>{l}</Typography>
             </Box>
-            <Box>
-              <Typography sx={{ color: '#F8FAFC', fontWeight: 700, fontSize: '1rem' }}>Sign in</Typography>
-              <Typography sx={{ color: '#94A3B8', fontSize: '0.78rem' }}>
-                Use your ACME employee account
-              </Typography>
-            </Box>
-          </Box>
+          ))}
+        </Box>
+      </Box>
 
-          {error && <Alert severity="error" sx={{ mb: 2, fontSize: '0.85rem' }}>{error}</Alert>}
+      {/* Right: sign in */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: { xs: 3, sm: 5 } }}>
+        <Box sx={{ width: '100%', maxWidth: 380 }}>
+          <Typography variant="h5" sx={{ mb: 0.5 }}>Sign in</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Use your ACME employee account.
+          </Typography>
 
-          <Box component="form" onSubmit={handleSubmit}>
-            <TextField
-              fullWidth label="Email address" name="email" type="email"
-              value={form.email} onChange={handleChange} required autoComplete="username"
-              sx={fieldSx}
-              InputLabelProps={{ sx: { color: '#94A3B8' } }}
-              InputProps={{ sx: { color: '#F8FAFC' } }}
-            />
-            <TextField
-              fullWidth label="Password" name="password" type="password"
-              value={form.password} onChange={handleChange} required autoComplete="current-password"
-              sx={{ ...fieldSx, mt: 2 }}
-              InputLabelProps={{ sx: { color: '#94A3B8' } }}
-              InputProps={{ sx: { color: '#F8FAFC' } }}
-            />
-            <Button
-              type="submit" fullWidth variant="contained" disabled={loading}
-              sx={{ mt: 3, py: 1.3, fontWeight: 700, fontSize: '0.9rem', borderRadius: 2 }}
-            >
-              {loading ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'Sign in'}
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+          <Box component="form" onSubmit={e => { e.preventDefault(); submit(form.email, form.password) }}>
+            <TextField fullWidth label="Work email" name="email" type="email" required
+              value={form.email} onChange={change} autoComplete="username" sx={{ mb: 2 }} />
+            <TextField fullWidth label="Password" name="password" type="password" required
+              value={form.password} onChange={change} autoComplete="current-password" />
+            <Button type="submit" fullWidth variant="contained" disabled={loading}
+              sx={{ mt: 2.5, py: 1.15 }}>
+              {loading ? <CircularProgress size={18} sx={{ color: '#fff' }} /> : 'Sign in'}
             </Button>
           </Box>
 
-          <Divider sx={{ my: 3, borderColor: 'rgba(255,255,255,0.08)' }}>
-            <Typography sx={{ color: '#64748B', fontSize: '0.72rem', px: 1, letterSpacing: '0.5px' }}>
-              QUICK SIGN-IN
-            </Typography>
+          <Divider sx={{ my: 3 }}>
+            <Typography variant="overline" color="text.secondary">Demo accounts</Typography>
           </Divider>
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {DEMO_ACCOUNTS.map(acc => (
-              <Button
-                key={acc.email}
-                variant="outlined"
-                size="small"
-                disabled={loading}
-                onClick={() => { setForm({ email: acc.email, password: acc.password }); submit(acc.email, acc.password) }}
+            {DEMO.map(d => (
+              <Paper key={d.email} onClick={() => !loading && submit(d.email, d.password)}
                 sx={{
-                  color: '#CBD5E1', borderColor: 'rgba(255,255,255,0.12)',
-                  fontSize: '0.78rem', justifyContent: 'flex-start', textTransform: 'none',
-                  py: 0.9,
-                  '&:hover': { borderColor: '#63B3ED', bgcolor: 'rgba(99,179,237,0.06)' },
-                }}
-              >
-                <Chip
-                  label={acc.label}
-                  size="small"
-                  sx={{
-                    mr: 1.25, height: 20, fontSize: '0.66rem', fontWeight: 700,
-                    bgcolor: 'rgba(255,255,255,0.08)', color: acc.color,
-                  }}
-                />
-                {acc.name}
-              </Button>
+                  p: 1.25, display: 'flex', alignItems: 'center', gap: 1.5, cursor: 'pointer',
+                  transition: 'border-color .15s ease, box-shadow .15s ease',
+                  '&:hover': { borderColor: palette.accent, boxShadow: shadow.sm },
+                }}>
+                <Avatar sx={{ width: 32, height: 32, bgcolor: d.color, fontSize: '0.75rem' }}>
+                  {initials(d.name)}
+                </Avatar>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="subtitle2" noWrap>{d.name}</Typography>
+                  <Typography variant="caption" noWrap sx={{ display: 'block' }}>{d.title}</Typography>
+                </Box>
+                <Typography variant="caption" sx={{ color: d.color, fontWeight: 700 }}>{d.role}</Typography>
+              </Paper>
             ))}
           </Box>
 
-          <Typography sx={{ color: '#475569', fontSize: '0.7rem', mt: 2, textAlign: 'center' }}>
-            Passwords are verified server-side using bcrypt.
+          <Typography variant="caption" sx={{ display: 'block', mt: 2.5, textAlign: 'center' }}>
+            Passwords are verified server-side with bcrypt.
           </Typography>
-        </Paper>
+        </Box>
       </Box>
     </Box>
   )
