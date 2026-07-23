@@ -38,6 +38,9 @@ import LinkIcon from '@mui/icons-material/Link'
 import { projectService } from '../services/projectService'
 import { peopleService } from '../services/peopleService'
 import StatusChip from '../components/StatusChip'
+import PageHeader from '../components/PageHeader'
+import ProjectGroupCard from '../components/ProjectGroupCard'
+import { statusToken, palette } from '../theme/tokens'
 
 const EMPTY = {
   name: '', description: '', project_id: '', project_name: '',
@@ -71,6 +74,27 @@ export default function Deliverables() {
   // The project selected in the dialog (used for team + date constraints).
   const dialogProject = projects.find(p => p.id === dialog.data.project_id)
   // Valid predecessors: same project, not itself, and no circular chains.
+  // Group work under its project — the unit people actually think in.
+  const groupedByProject = (() => {
+    const map = new Map()
+    for (const d of items) {
+      const key = d.project_id || 'unassigned'
+      if (!map.has(key)) {
+        const proj = projects.find(p => p.id === d.project_id)
+        map.set(key, { key, name: d.project_name || 'No project', manager: proj?.manager, items: [] })
+      }
+      map.get(key).items.push(d)
+    }
+    return [...map.values()].map(g => {
+      const done = g.items.filter(d => d.status === 'completed').length
+      const blocked = g.items.filter(d => isBlocked(d, items)).length
+      const progress = g.items.length
+        ? Math.round(g.items.reduce((sum, d) => sum + Number(d.completion_percentage || 0), 0) / g.items.length)
+        : 0
+      return { ...g, done, blocked, progress }
+    }).sort((a, b) => b.blocked - a.blocked || a.name.localeCompare(b.name))
+  })()
+
   const dependencyChoices = validDependencyOptions(
     { ...dialog.data, project_id: dialog.data.project_id }, items
   )
@@ -213,24 +237,23 @@ export default function Deliverables() {
 
   return (
     <Box>
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700}>Deliverables</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
-            <Typography variant="body2" color="text.secondary">{items.length} total</Typography>
-            {blockedCount(items) > 0 && (
-              <Chip icon={<BlockIcon sx={{ fontSize: 14 }} />} label={`${blockedCount(items)} blocked by dependencies`}
-                size="small" sx={{ fontWeight: 700, fontSize: '0.68rem', bgcolor: '#FEE2E2', color: '#991B1B' }} />
-            )}
-          </Box>
-        </Box>
-        {can(user, 'deliverable:create') && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-            New Deliverable
+      <PageHeader
+        eyebrow="Delivery"
+        title="Deliverables"
+        description="Grouped by project. Open one to see its work and what is holding it up."
+        meta={<>
+          <Chip label={`${items.length} deliverables`} size="small" variant="outlined" />
+          {blockedCount(items) > 0 && (
+            <Chip label={`${blockedCount(items)} blocked`} size="small"
+              sx={{ bgcolor: statusToken('blocked').bg, color: statusToken('blocked').fg, fontWeight: 600 }} />
+          )}
+        </>}
+        action={can(user, 'deliverable:create') ? (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+            New deliverable
           </Button>
-        )}
-      </Box>
+        ) : null}
+      />
 
       {user?.role === 'admin' && (
         <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>{ADMIN_READONLY_NOTE}</Alert>
@@ -255,48 +278,73 @@ export default function Deliverables() {
         </FormControl>
       </Box>
 
-      <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.78rem', bgcolor: '#F8FAFC' } }}>
-                <TableCell>Deliverable</TableCell>
-                <TableCell>Project</TableCell>
-                <TableCell>Depends On</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Assigned To</TableCell>
-                <TableCell>Due Date</TableCell>
-                <TableCell>Progress</TableCell>
-                <TableCell align="center">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {loading
-                ? Array.from({ length: 4 }).map((_, i) => (
-                    <TableRow key={i}>{Array.from({ length: 8 }).map((_, j) => (
-                      <TableCell key={j}><Skeleton variant="text" /></TableCell>
-                    ))}</TableRow>
-                  ))
-                : items.length === 0
-                ? <TableRow><TableCell colSpan={8} align="center" sx={{ py: 5, color: 'text.secondary' }}>
-                    No deliverables found.
-                  </TableCell></TableRow>
-                : items.map(d => (
+      {/* Work grouped under the project it belongs to */}
+      {loading ? (
+        [1, 2, 3].map(i => (
+          <Paper key={i} sx={{ p: 2.5, mb: 1.5 }}>
+            <Skeleton variant="text" width="30%" height={26} />
+            <Skeleton variant="text" width="55%" />
+          </Paper>
+        ))
+      ) : items.length === 0 ? (
+        <Paper sx={{ p: 6, textAlign: 'center', borderStyle: 'dashed' }}>
+          <Typography variant="subtitle1" sx={{ mb: 0.5 }}>No deliverables yet</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {can(user, 'deliverable:create')
+              ? 'Create one to start tracking the work in a project.'
+              : 'Nothing has been added to your projects yet.'}
+          </Typography>
+        </Paper>
+      ) : (
+        groupedByProject.map(group => (
+          <ProjectGroupCard
+            key={group.key}
+            title={group.name}
+            subtitle={group.manager ? `Managed by ${group.manager}` : 'No project assigned'}
+            count={group.items.length}
+            accent={group.blocked > 0 ? statusToken('blocked').dot
+                   : group.done === group.items.length ? statusToken('completed').dot
+                   : statusToken('active').dot}
+            progress={group.progress}
+            defaultOpen={groupedByProject.length <= 2 || group.blocked > 0}
+            stats={[
+              { label: 'done', value: `${group.done}/${group.items.length}` },
+              ...(group.blocked > 0
+                ? [{ label: 'blocked', value: group.blocked, tone: statusToken('blocked').fg }]
+                : []),
+            ]}
+          >
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Deliverable</TableCell>
+                    <TableCell>Depends on</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Assigned to</TableCell>
+                    <TableCell>Due</TableCell>
+                    <TableCell>Progress</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {group.items.map(d => (
                     <TableRow key={d.id} hover>
                       <TableCell>
-                        <Typography fontWeight={600} fontSize="0.85rem">{d.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">{d.description}</Typography>
+                        <Typography variant="subtitle2">{d.name}</Typography>
+                        {d.description && (
+                          <Typography variant="caption" sx={{ display: 'block' }}>{d.description}</Typography>
+                        )}
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>{d.project_name || '—'}</TableCell>
-                      <TableCell sx={{ fontSize: '0.8rem' }}>
+                      <TableCell>
                         {(() => {
                           const dep = dependencyOf(d, items)
-                          if (!dep) return <Typography variant="caption" color="text.secondary">—</Typography>
+                          if (!dep) return <Typography variant="caption">—</Typography>
                           return (
                             <Tooltip title={`${dep.name} — ${dep.completion_percentage || 0}% complete`}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 <LinkIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
-                                <Typography variant="caption" noWrap sx={{ maxWidth: 130 }}>{dep.name}</Typography>
+                                <Typography variant="caption" noWrap sx={{ maxWidth: 140 }}>{dep.name}</Typography>
                               </Box>
                             </Tooltip>
                           )
@@ -307,43 +355,47 @@ export default function Deliverables() {
                           <StatusChip value={d.status} />
                           {isBlocked(d, items) && (
                             <Tooltip title={blockReason(d, items)}>
-                              <BlockIcon sx={{ fontSize: 15, color: '#DC2626' }} />
+                              <BlockIcon sx={{ fontSize: 15, color: statusToken('blocked').dot }} />
                             </Tooltip>
                           )}
                         </Box>
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.85rem' }}>{d.assigned_to || '—'}</TableCell>
-                      <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>
-                        {d.due_date ? new Date(d.due_date).toLocaleDateString() : '—'}
+                      <TableCell><Typography variant="body2">{d.assigned_to || '—'}</Typography></TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {d.due_date ? new Date(d.due_date).toLocaleDateString() : '—'}
+                        </Typography>
                       </TableCell>
-                      <TableCell sx={{ minWidth: 110 }}>
+                      <TableCell sx={{ minWidth: 120 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={d.completion_percentage || 0}
-                            sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: '#E2E8F0',
-                              '& .MuiLinearProgress-bar': { bgcolor: '#1565C0', borderRadius: 3 } }}
-                          />
-                          <Typography variant="caption">{d.completion_percentage || 0}%</Typography>
+                          <LinearProgress variant="determinate" value={d.completion_percentage || 0}
+                            sx={{ flex: 1 }} />
+                          <Typography variant="caption" sx={{ minWidth: 30, textAlign: 'right' }}>
+                            {d.completion_percentage || 0}%
+                          </Typography>
                         </Box>
                       </TableCell>
-                      <TableCell align="center">
+                      <TableCell align="right">
                         {canEditDeliverable(user, d, projects) ? (
-                          <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(d)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                          <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(d)}>
+                            <EditIcon fontSize="small" /></IconButton></Tooltip>
                         ) : canUpdateProgress(user, d, projects) && (
-                          <Tooltip title="Update my progress"><IconButton size="small" color="primary" onClick={() => openEdit(d, true)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                          <Tooltip title="Update my progress"><IconButton size="small" onClick={() => openEdit(d, true)}>
+                            <EditIcon fontSize="small" /></IconButton></Tooltip>
                         )}
                         {canDeleteDeliverable(user, d, projects) && (
-                          <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(d)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                          <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(d)}>
+                            <DeleteIcon fontSize="small" /></IconButton></Tooltip>
                         )}
                       </TableCell>
                     </TableRow>
-                  ))
-              }
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </ProjectGroupCard>
+        ))
+      )}
 
       {/* Dialog */}
       <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>

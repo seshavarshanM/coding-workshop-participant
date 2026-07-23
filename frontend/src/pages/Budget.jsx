@@ -32,9 +32,14 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import { budgetService } from '../services/budgetService'
+import PageHeader from '../components/PageHeader'
+import ProjectGroupCard from '../components/ProjectGroupCard'
+import { statusToken, palette } from '../theme/tokens'
 import { useAuth } from '../context/AuthContext'
 import { can, canEditBudgetEntry, canDeleteBudgetEntry, ADMIN_READONLY_NOTE } from '../utils/permissions'
 import { projectService } from '../services/projectService'
+
+const money = n => `$${Number(n || 0).toLocaleString()}`
 
 const CATEGORIES = ['Personnel','Infrastructure','Tooling','Vendor','Training','Marketing','Operations','Other']
 
@@ -113,6 +118,7 @@ export default function Budget() {
   const isValid = Object.keys(errors).length === 0
   const showErr = (field) => touched[field] && errors[field]
 
+
   // Managers may only record budget against projects they manage.
   const assignableProjects = projects.filter(
     p => user?.role === 'admin' || p.manager === user?.name
@@ -169,6 +175,29 @@ export default function Budget() {
 
   const entries = data.entries || []
   const summary = data.summary || { total_planned: 0, total_actual: 0 }
+
+  // Entries grouped under their project, with plan-vs-actual per project.
+  const groupedByProject = (() => {
+    const map = new Map()
+    for (const e of entries) {
+      const key = e.project_id || 'unassigned'
+      if (!map.has(key)) {
+        const proj = projects.find(p => p.id === e.project_id)
+        map.set(key, {
+          key, name: e.project_name || 'No project',
+          ceiling: Number(proj?.budget_planned || 0), manager: proj?.manager, items: [],
+        })
+      }
+      map.get(key).items.push(e)
+    }
+    return [...map.values()].map(g => {
+      const plannedSum = g.items.reduce((s2, e) => s2 + Number(e.planned_amount || 0), 0)
+      const actualSum  = g.items.reduce((s2, e) => s2 + Number(e.actual_amount || 0), 0)
+      const used = plannedSum > 0 ? Math.round((actualSum / plannedSum) * 100) : 0
+      return { ...g, plannedSum, actualSum, variance: plannedSum - actualSum, used,
+               overCeiling: g.ceiling > 0 && plannedSum > g.ceiling }
+    }).sort((a, b) => b.actualSum - a.actualSum)
+  })()
   const planned = Number(summary.total_planned)
   const actual  = Number(summary.total_actual)
   const variance = planned - actual
@@ -239,79 +268,101 @@ export default function Budget() {
         </FormControl>
       </Box>
 
-      <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.78rem', bgcolor: '#F8FAFC' } }}>
-                <TableCell>Category</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell>Project</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell align="right">Planned ($)</TableCell>
-                <TableCell align="right">Actual ($)</TableCell>
-                <TableCell align="right">Variance</TableCell>
-                <TableCell align="center">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {loading
-                ? Array.from({ length: 4 }).map((_, i) => (
-                    <TableRow key={i}>{Array.from({ length: 8 }).map((_, j) => (
-                      <TableCell key={j}><Skeleton variant="text" /></TableCell>
-                    ))}</TableRow>
-                  ))
-                : entries.length === 0
-                ? <TableRow><TableCell colSpan={8} align="center" sx={{ py: 5, color: 'text.secondary' }}>No budget entries. Add your first entry!</TableCell></TableRow>
-                : entries.map(e => {
+      {/* Spend grouped under the project it belongs to */}
+      {loading ? (
+        [1, 2, 3].map(i => (
+          <Paper key={i} sx={{ p: 2.5, mb: 1.5 }}>
+            <Skeleton variant="text" width="30%" height={26} />
+            <Skeleton variant="text" width="50%" />
+          </Paper>
+        ))
+      ) : entries.length === 0 ? (
+        <Paper sx={{ p: 6, textAlign: 'center', borderStyle: 'dashed' }}>
+          <Typography variant="subtitle1" sx={{ mb: 0.5 }}>No budget recorded yet</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {can(user, 'budget:propose')
+              ? 'Propose an entry to start tracking spend against plan.'
+              : 'Nothing has been proposed for your projects yet.'}
+          </Typography>
+        </Paper>
+      ) : (
+        groupedByProject.map(group => (
+          <ProjectGroupCard
+            key={group.key}
+            title={group.name}
+            subtitle={group.ceiling > 0
+              ? `Approved budget ${money(group.ceiling)}${group.overCeiling ? ' · proposals exceed it' : ''}`
+              : 'No approved budget set'}
+            count={group.items.length}
+            accent={group.overCeiling || group.variance < 0
+              ? statusToken('blocked').dot
+              : group.used > 75 ? statusToken('at_risk').dot : statusToken('completed').dot}
+            progress={group.used}
+            defaultOpen={groupedByProject.length <= 2 || group.variance < 0}
+            stats={[
+              { label: 'planned', value: money(group.plannedSum) },
+              { label: 'actual', value: money(group.actualSum) },
+              { label: group.variance >= 0 ? 'under' : 'over',
+                value: money(Math.abs(group.variance)),
+                tone: group.variance >= 0 ? statusToken('completed').fg : statusToken('blocked').fg },
+            ]}
+          >
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Category</TableCell>
+                    <TableCell>Description</TableCell>
+                    <TableCell>Proposed by</TableCell>
+                    <TableCell>Date</TableCell>
+                    <TableCell align="right">Planned</TableCell>
+                    <TableCell align="right">Actual</TableCell>
+                    <TableCell align="right">Variance</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {group.items.map(e => {
                     const v = Number(e.planned_amount) - Number(e.actual_amount)
                     return (
                       <TableRow key={e.id} hover>
+                        <TableCell><Chip label={e.category} size="small" variant="outlined" /></TableCell>
                         <TableCell>
-                          <Chip label={e.category} size="small" sx={{ fontWeight: 600, fontSize: '0.72rem' }} />
+                          <Typography variant="body2" color="text.secondary">{e.description || '—'}</Typography>
                         </TableCell>
-                        <TableCell sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>{e.description || '—'}</TableCell>
-                        <TableCell sx={{ fontSize: '0.82rem' }}>{e.project_name || '—'}</TableCell>
-                        <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>
-                          {e.entry_date ? new Date(e.entry_date).toLocaleDateString() : '—'}
+                        <TableCell><Typography variant="body2">{e.proposed_by || '—'}</Typography></TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {e.entry_date ? new Date(e.entry_date).toLocaleDateString() : '—'}
+                          </Typography>
                         </TableCell>
-                        <TableCell align="right" sx={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                          ${Number(e.planned_amount).toLocaleString()}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontSize: '0.85rem' }}>
-                          ${Number(e.actual_amount).toLocaleString()}
+                        <TableCell align="right"><Typography variant="subtitle2">{money(e.planned_amount)}</Typography></TableCell>
+                        <TableCell align="right"><Typography variant="body2">{money(e.actual_amount)}</Typography></TableCell>
+                        <TableCell align="right">
+                          <Typography variant="subtitle2" sx={{
+                            color: v >= 0 ? statusToken('completed').fg : statusToken('blocked').fg }}>
+                            {v >= 0 ? '+' : '−'}{money(Math.abs(v))}
+                          </Typography>
                         </TableCell>
                         <TableCell align="right">
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                            {v >= 0
-                              ? <TrendingUpIcon sx={{ fontSize: 14, color: '#16A34A' }} />
-                              : <TrendingDownIcon sx={{ fontSize: 14, color: '#DC2626' }} />
-                            }
-                            <Typography
-                              variant="caption"
-                              fontWeight={700}
-                              sx={{ color: v >= 0 ? '#16A34A' : '#DC2626' }}
-                            >
-                              {v >= 0 ? '+' : ''}${v.toLocaleString()}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell align="center">
                           {canEditBudgetEntry(user, e, projects) && (
-                            <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(e)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                            <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(e)}>
+                              <EditIcon fontSize="small" /></IconButton></Tooltip>
                           )}
                           {canDeleteBudgetEntry(user, e, projects) && (
-                            <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(e)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                            <Tooltip title="Remove"><IconButton size="small" color="error" onClick={() => setDelConfirm(e)}>
+                              <DeleteIcon fontSize="small" /></IconButton></Tooltip>
                           )}
                         </TableCell>
                       </TableRow>
                     )
-                  })
-              }
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </ProjectGroupCard>
+        ))
+      )}
 
       {/* Dialog */}
       <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>

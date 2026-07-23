@@ -33,6 +33,8 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import SearchIcon from '@mui/icons-material/Search'
 import InputAdornment from '@mui/material/InputAdornment'
 import TableSortLabel from '@mui/material/TableSortLabel'
+import Tabs from '@mui/material/Tabs'
+import Tab from '@mui/material/Tab'
 import ReportProblemIcon from '@mui/icons-material/ReportProblem'
 import { projectService } from '../services/projectService'
 import { peopleService } from '../services/peopleService'
@@ -40,6 +42,7 @@ import { useAuth } from '../context/AuthContext'
 import { can, canEditProject, canDeleteProject, ADMIN_READONLY_NOTE } from '../utils/permissions'
 import { isAtRisk, riskReason } from '../utils/risk'
 import StatusChip from '../components/StatusChip'
+import PageHeader from '../components/PageHeader'
 
 const EMPTY_FORM = {
   name: '', description: '', status: 'planning', department: '',
@@ -55,6 +58,8 @@ export default function Projects() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [sort, setSort] = useState({ field: '', dir: 'asc' })
+  // Managers open on their own work; admins oversee everything, so they open on all.
+  const [tab, setTab] = useState(() => (user?.role === 'manager' ? 'mine' : 'all'))
   const [people, setPeople] = useState([])
   const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY_FORM })
   const [delConfirm, setDelConfirm] = useState(null)
@@ -83,7 +88,15 @@ export default function Projects() {
   const toggleSort = (field) => setSort(s =>
     s.field === field ? { field, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' })
 
-  const sorted = [...projects].sort((a, b) => {
+  const mineCount   = projects.filter(p => p.manager === user?.name).length
+  const riskCount    = projects.filter(isAtRisk).length
+  const scoped = tab === 'mine'
+    ? projects.filter(p => p.manager === user?.name)
+    : tab === 'risk'
+    ? projects.filter(isAtRisk)
+    : projects
+
+  const sorted = [...scoped].sort((a, b) => {
     if (!sort.field) return 0
     let av, bv
     switch (sort.field) {
@@ -168,18 +181,23 @@ export default function Projects() {
   }
   return (
     <Box>
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700}>Projects</Typography>
-          <Typography variant="body2" color="text.secondary">{projects.length} total</Typography>
-        </Box>
-        {can(user, 'project:create') && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-            New Project
+      <PageHeader
+        eyebrow="Delivery"
+        title="Projects"
+        description="Every initiative, who owns it, and whether it is on track."
+        action={
+        can(user, 'project:create') ? (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+            New project
           </Button>
-        )}
-      </Box>
+        ) : null}
+      />
+
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2.5 }}>
+        {user?.role === 'manager' && <Tab value="mine" label={`My projects (${mineCount})`} />}
+        <Tab value="all" label={`All projects (${projects.length})`} />
+        <Tab value="risk" label={`Needs attention (${riskCount})`} />
+      </Tabs>
 
       {user?.role === 'admin' && (
         <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>{ADMIN_READONLY_NOTE}</Alert>

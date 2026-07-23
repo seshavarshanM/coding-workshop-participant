@@ -20,7 +20,7 @@ import HistoryIcon from '@mui/icons-material/HistoryRounded'
 import LogoutIcon from '@mui/icons-material/LogoutRounded'
 
 import { useAuth } from '../context/AuthContext'
-import { palette } from '../theme/tokens'
+import { palette, font } from '../theme/tokens'
 
 const NAV = [
   { section: 'Overview', items: [
@@ -53,15 +53,23 @@ export default function Sidebar({ onClose }) {
     }}>
       {/* Wordmark */}
       <Box sx={{ px: 2.5, pt: 3, pb: 2.5 }}>
-        <Typography sx={{
-          color: '#FFFFFF', fontWeight: 750, fontSize: '1.0625rem',
-          letterSpacing: '-0.02em', lineHeight: 1,
-        }}>
-          ACME
-          <Box component="span" sx={{ color: '#818CF8' }}> Project Hub</Box>
-        </Typography>
-        <Typography sx={{ color: palette.navText, fontSize: '0.6875rem', mt: 0.5 }}>
-          Delivery, capacity and cost
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+          <Box sx={{
+            width: 26, height: 26, borderRadius: 0.75, bgcolor: palette.accent,
+            display: 'grid', placeItems: 'center', flexShrink: 0,
+          }}>
+            <Typography sx={{ fontFamily: font.display, fontWeight: 700,
+              fontSize: '0.875rem', color: palette.ink, lineHeight: 1 }}>A</Typography>
+          </Box>
+          <Typography sx={{
+            fontFamily: font.display, color: '#FFFFFF', fontWeight: 600,
+            fontSize: '1.0625rem', letterSpacing: '-0.01em', lineHeight: 1,
+          }}>
+            Project Hub
+          </Typography>
+        </Box>
+        <Typography sx={{ color: '#6E6E77', fontSize: '0.6875rem', mt: 1, letterSpacing: '0.02em' }}>
+          ACME Inc · Delivery, capacity and cost
         </Typography>
       </Box>
 
@@ -75,7 +83,7 @@ export default function Sidebar({ onClose }) {
           return (
             <Box key={section} sx={{ mb: 2 }}>
               <Typography sx={{
-                px: 1.25, mb: 0.75, color: '#5A6478',
+                px: 1.25, mb: 0.75, color: '#6E6E77',
                 fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.08em',
                 textTransform: 'uppercase',
               }}>
@@ -90,11 +98,7 @@ export default function Sidebar({ onClose }) {
                         borderRadius: 1.5, mb: 0.25, px: 1.25, py: 0.75, minHeight: 36,
                         bgcolor: isActive ? palette.navActiveBg : 'transparent',
                         position: 'relative',
-                        '&:hover': { bgcolor: isActive ? palette.navActiveBg : 'rgba(255,255,255,0.04)' },
-                        '&::before': isActive ? {
-                          content: '""', position: 'absolute', left: -5, top: 8, bottom: 8,
-                          width: 3, borderRadius: 2, bgcolor: '#818CF8',
-                        } : {},
+                        '&:hover': { bgcolor: isActive ? palette.navActiveBg : 'rgba(255,255,255,0.06)' },
                       }}>
                         <ListItemIcon sx={{ minWidth: 30 }}>
                           <Icon sx={{ fontSize: 18, color: isActive ? palette.navTextActive : palette.navText }} />
@@ -118,20 +122,20 @@ export default function Sidebar({ onClose }) {
 
       {/* Signed-in identity */}
       <Box sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.25 }}>
-        <Avatar sx={{ width: 32, height: 32, bgcolor: '#4F46E5', fontSize: '0.75rem' }}>
+        <Avatar sx={{ width: 32, height: 32, bgcolor: palette.accent, color: palette.ink, fontSize: '0.75rem' }}>
           {initials(user?.name)}
         </Avatar>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography noWrap sx={{ color: '#E8EAEE', fontSize: '0.8125rem', fontWeight: 600, lineHeight: 1.3 }}>
             {user?.name}
           </Typography>
-          <Typography noWrap sx={{ color: '#5A6478', fontSize: '0.6875rem' }}>
+          <Typography noWrap sx={{ color: '#6E6E77', fontSize: '0.6875rem' }}>
             {user?.employee_id} · {user?.role}
           </Typography>
         </Box>
         <Tooltip title="Sign out">
           <IconButton size="small" onClick={logout}
-            sx={{ color: palette.navText, '&:hover': { color: '#FDA29B', bgcolor: 'rgba(253,162,155,0.08)' } }}>
+            sx={{ color: palette.navText, '&:hover': { color: palette.accent, bgcolor: 'rgba(255,197,61,0.10)' } }}>
             <LogoutIcon sx={{ fontSize: 17 }} />
           </IconButton>
         </Tooltip>

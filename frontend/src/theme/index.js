@@ -1,39 +1,45 @@
 import { createTheme } from '@mui/material/styles'
-import { palette, shadow, radius } from './tokens'
+import { palette, shadow, radius, font } from './tokens'
 
 /**
- * Global theme. Component defaults are set here rather than repeated as `sx`
- * props across pages, so the whole interface stays consistent and pages carry
- * layout logic only.
+ * Global theme. Component defaults live here so pages carry layout logic only.
+ *
+ * Type has two jobs: headings use a transitional serif to give the tool some
+ * authority, while every number and label uses IBM Plex with tabular figures so
+ * columns of data line up and stay scannable.
  */
 const theme = createTheme({
   palette: {
     mode: 'light',
-    primary:   { main: palette.accent, dark: palette.accentHover, light: palette.accentSoft },
-    secondary: { main: '#7A5AF8' },
+    primary:   { main: palette.accent, dark: palette.accentHover,
+                 light: palette.accentSoft, contrastText: palette.ink },
+    secondary: { main: palette.ink },
     background:{ default: palette.canvas, paper: palette.surface },
     text:      { primary: palette.ink, secondary: palette.inkMuted, disabled: palette.inkFaint },
     divider:   palette.border,
-    error:     { main: '#D92D20' },
-    warning:   { main: '#DC6803' },
-    success:   { main: '#079455' },
-    info:      { main: '#175CD3' },
+    error:     { main: '#C0332A' },
+    warning:   { main: '#EA580C' },
+    success:   { main: '#1F9254' },
+    info:      { main: '#2C6FD1' },
   },
 
   typography: {
-    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    // Tighter tracking as size increases — headings read as considered, not shouty
-    h4: { fontSize: '1.75rem', fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.25 },
-    h5: { fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.018em', lineHeight: 1.3 },
-    h6: { fontSize: '1.0625rem', fontWeight: 650, letterSpacing: '-0.012em', lineHeight: 1.4 },
-    subtitle1: { fontSize: '0.9375rem', fontWeight: 600, letterSpacing: '-0.006em' },
-    subtitle2: { fontSize: '0.8125rem', fontWeight: 600, letterSpacing: '0' },
+    fontFamily: font.body,
+    // Serif display sizes — set tight, they carry the page's authority
+    h4: { fontFamily: font.display, fontSize: '1.875rem', fontWeight: 600,
+          letterSpacing: '-0.015em', lineHeight: 1.2 },
+    h5: { fontFamily: font.display, fontSize: '1.5rem', fontWeight: 600,
+          letterSpacing: '-0.012em', lineHeight: 1.25 },
+    h6: { fontFamily: font.display, fontSize: '1.125rem', fontWeight: 600,
+          letterSpacing: '-0.008em', lineHeight: 1.35 },
+    subtitle1: { fontSize: '0.9375rem', fontWeight: 600, letterSpacing: '-0.003em' },
+    subtitle2: { fontSize: '0.8125rem', fontWeight: 600 },
     body1: { fontSize: '0.9375rem', lineHeight: 1.55 },
     body2: { fontSize: '0.875rem', lineHeight: 1.5 },
     caption: { fontSize: '0.75rem', lineHeight: 1.45, color: palette.inkSubtle },
-    button: { fontWeight: 600, letterSpacing: '0' },
-    // Eyebrow labels above sections
-    overline: { fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.4 },
+    button: { fontWeight: 600, letterSpacing: '0.005em' },
+    overline: { fontFamily: font.body, fontSize: '0.6875rem', fontWeight: 600,
+                letterSpacing: '0.09em', lineHeight: 1.4 },
   },
 
   shape: { borderRadius: radius.md },
@@ -41,8 +47,13 @@ const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
-        body: { backgroundColor: palette.canvas, WebkitFontSmoothing: 'antialiased' },
-        '::selection': { background: palette.accentSoft },
+        body: {
+          backgroundColor: palette.canvas,
+          WebkitFontSmoothing: 'antialiased',
+          // Numbers align in columns wherever they appear
+          fontVariantNumeric: 'tabular-nums',
+        },
+        '::selection': { background: palette.accent, color: palette.ink },
       },
     },
 
@@ -61,21 +72,20 @@ const theme = createTheme({
       defaultProps: { disableElevation: true },
       styleOverrides: {
         root: {
-          textTransform: 'none',
-          borderRadius: radius.md,
-          padding: '8px 14px',
-          fontSize: '0.875rem',
+          textTransform: 'none', borderRadius: radius.md,
+          padding: '8px 14px', fontSize: '0.875rem',
           transition: 'background-color .15s ease, border-color .15s ease, box-shadow .15s ease',
         },
         contained: {
+          backgroundColor: palette.accent, color: palette.ink,
           boxShadow: shadow.xs,
-          '&:hover': { boxShadow: shadow.sm },
+          '&:hover': { backgroundColor: palette.accentHover, boxShadow: shadow.sm },
         },
         outlined: {
-          borderColor: palette.borderStrong,
-          color: palette.inkMuted,
-          '&:hover': { borderColor: palette.inkFaint, backgroundColor: palette.surfaceAlt },
+          borderColor: palette.borderStrong, color: palette.ink,
+          '&:hover': { borderColor: palette.ink, backgroundColor: palette.surfaceAlt },
         },
+        text: { color: palette.inkMuted, '&:hover': { backgroundColor: palette.surfaceAlt } },
         sizeSmall: { padding: '5px 10px', fontSize: '0.8125rem' },
       },
     },
@@ -94,13 +104,10 @@ const theme = createTheme({
           '& .MuiTableCell-head': {
             backgroundColor: palette.surfaceAlt,
             color: palette.inkSubtle,
-            fontWeight: 600,
-            fontSize: '0.75rem',
-            letterSpacing: '0.02em',
-            textTransform: 'uppercase',
+            fontWeight: 600, fontSize: '0.6875rem',
+            letterSpacing: '0.07em', textTransform: 'uppercase',
             borderBottom: `1px solid ${palette.border}`,
-            paddingTop: 10,
-            paddingBottom: 10,
+            paddingTop: 10, paddingBottom: 10,
           },
         },
       },
@@ -109,10 +116,8 @@ const theme = createTheme({
     MuiTableCell: {
       styleOverrides: {
         root: {
-          borderColor: palette.border,
-          fontSize: '0.875rem',
-          paddingTop: 12,
-          paddingBottom: 12,
+          borderColor: palette.border, fontSize: '0.875rem',
+          paddingTop: 12, paddingBottom: 12,
         },
       },
     },
@@ -130,12 +135,10 @@ const theme = createTheme({
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          borderRadius: radius.md,
-          backgroundColor: palette.surface,
-          fontSize: '0.9375rem',
+          borderRadius: radius.md, backgroundColor: palette.surface, fontSize: '0.9375rem',
           '& fieldset': { borderColor: palette.borderStrong },
           '&:hover fieldset': { borderColor: palette.inkFaint },
-          '&.Mui-focused fieldset': { borderWidth: 1, borderColor: palette.accent },
+          '&.Mui-focused fieldset': { borderWidth: 2, borderColor: palette.ink },
         },
         input: { padding: '10px 12px' },
       },
@@ -144,14 +147,29 @@ const theme = createTheme({
     MuiInputLabel: { styleOverrides: { root: { fontSize: '0.875rem' } } },
     MuiFormHelperText: { styleOverrides: { root: { fontSize: '0.75rem', marginLeft: 2 } } },
 
-    MuiDialog: {
+    MuiTabs: {
       styleOverrides: {
-        paper: { borderRadius: radius.xl, boxShadow: shadow.lg, border: 'none' },
+        root: { minHeight: 40, borderBottom: `1px solid ${palette.border}` },
+        indicator: { height: 2, backgroundColor: palette.ink },
       },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none', minHeight: 40, fontSize: '0.875rem', fontWeight: 600,
+          color: palette.inkSubtle, padding: '8px 14px',
+          '&.Mui-selected': { color: palette.ink },
+        },
+      },
+    },
+
+    MuiDialog: {
+      styleOverrides: { paper: { borderRadius: radius.xl, boxShadow: shadow.lg, border: 'none' } },
     },
     MuiDialogTitle: {
       styleOverrides: {
-        root: { fontSize: '1.0625rem', fontWeight: 650, letterSpacing: '-0.012em', padding: '20px 24px' },
+        root: { fontFamily: font.display, fontSize: '1.125rem', fontWeight: 600,
+                letterSpacing: '-0.008em', padding: '20px 24px' },
       },
     },
     MuiDialogContent: { styleOverrides: { root: { padding: '20px 24px' } } },
@@ -160,29 +178,24 @@ const theme = createTheme({
     MuiAlert: {
       styleOverrides: {
         root: { borderRadius: radius.md, fontSize: '0.8125rem', border: '1px solid transparent' },
-        standardInfo:    { backgroundColor: '#EFF8FF', color: '#175CD3', borderColor: '#B2DDFF' },
-        standardWarning: { backgroundColor: '#FFFAEB', color: '#B54708', borderColor: '#FEDF89' },
-        standardError:   { backgroundColor: '#FEF3F2', color: '#B42318', borderColor: '#FECDCA' },
-        standardSuccess: { backgroundColor: '#ECFDF3', color: '#027A48', borderColor: '#ABEFC6' },
+        standardInfo:    { backgroundColor: '#E9F0FA', color: '#1B4B8F', borderColor: '#C3D7F0' },
+        standardWarning: { backgroundColor: '#FDEEE4', color: '#9C3A06', borderColor: '#F7CDB0' },
+        standardError:   { backgroundColor: '#FBEAE8', color: '#93231C', borderColor: '#F2C4C0' },
+        standardSuccess: { backgroundColor: '#E8F5EC', color: '#15633C', borderColor: '#B9E0C8' },
       },
     },
 
     MuiLinearProgress: {
       styleOverrides: {
-        root: { height: 6, borderRadius: 999, backgroundColor: '#EAECF0' },
-        bar: { borderRadius: 999 },
+        root: { height: 6, borderRadius: 2, backgroundColor: '#E8E6DF' },
+        bar: { borderRadius: 2 },
       },
     },
 
     MuiTooltip: {
       styleOverrides: {
-        tooltip: {
-          backgroundColor: palette.ink,
-          fontSize: '0.75rem',
-          fontWeight: 500,
-          borderRadius: radius.sm,
-          padding: '6px 10px',
-        },
+        tooltip: { backgroundColor: palette.ink, fontSize: '0.75rem', fontWeight: 500,
+                   borderRadius: radius.sm, padding: '6px 10px' },
         arrow: { color: palette.ink },
       },
     },
@@ -194,6 +207,12 @@ const theme = createTheme({
       },
     },
     MuiDivider: { styleOverrides: { root: { borderColor: palette.border } } },
+    MuiAccordion: {
+      styleOverrides: {
+        root: { border: `1px solid ${palette.border}`, borderRadius: radius.lg,
+                '&:before': { display: 'none' }, '&.Mui-expanded': { margin: 0 } },
+      },
+    },
   },
 })
 
