@@ -89,6 +89,79 @@ def handler(event, context):
             return respond(200, execute_query(
                 f"SELECT * FROM projects {where} ORDER BY created_at DESC", params or None))
 
+        # ── POST /api/projects/cleanup-demo ───────────────────────────
+        # Removes records left over from development, keeping the seeded demo
+        # data. The cloud database sits inside a VPC and cannot be reached with
+        # psql from a workstation, so this runs where the connection exists.
+        #
+        # Administrator only, dry-run by default, and audited.
+        if method == 'POST' and get_path(event).rstrip('/').endswith('/cleanup-demo'):
+            require_role(user, 'admin')
+
+            keep = [
+                'Customer Portal Redesign', 'Payments API v2', 'Cloud Migration Phase 2',
+                'Internal Analytics Dashboard', 'Legacy CRM Decommission', 'Mobile App Launch',
+            ]
+            placeholders = ','.join(['%s'] * len(keep))
+
+            doomed = execute_query(
+                f"SELECT id, name FROM projects WHERE name NOT IN ({placeholders}) ORDER BY name",
+                keep)
+            doomed_ids = [r['id'] for r in doomed]
+
+            orphan_deliverables = execute_query(f"""
+                SELECT d.id, d.name FROM deliverables d
+                LEFT JOIN projects p ON p.id = d.project_id
+                WHERE p.id IS NULL OR p.name NOT IN ({placeholders})
+                ORDER BY d.name
+            """, keep)
+
+            orphan_budget = execute_query(f"""
+                SELECT b.id, b.category, b.project_name FROM budget_entries b
+                LEFT JOIN projects p ON p.id = b.project_id
+                WHERE p.id IS NULL OR p.name NOT IN ({placeholders})
+            """, keep)
+
+            preview = {
+                'projects': [r['name'] for r in doomed],
+                'deliverables': [r['name'] for r in orphan_deliverables],
+                'budget_entries': len(orphan_budget),
+            }
+
+            if not body.get('confirm'):
+                return respond(200, {
+                    'dry_run': True,
+                    'would_remove': preview,
+                    'message': 'Nothing changed. Send {"confirm": true} to remove these.',
+                })
+
+            # Children first, so nothing is left pointing at a deleted parent.
+            for row in orphan_deliverables:
+                try:
+                    execute_query("DELETE FROM progress_updates WHERE deliverable_id = %s::uuid",
+                                  (row['id'],))
+                except Exception:
+                    pass                      # table may not exist yet
+                execute_query("DELETE FROM deliverables WHERE id = %s", (row['id'],))
+
+            for row in orphan_budget:
+                execute_query("DELETE FROM budget_entries WHERE id = %s", (row['id'],))
+
+            for pid in doomed_ids:
+                execute_query("DELETE FROM projects WHERE id = %s", (pid,))
+
+            audit.record(user, 'delete', 'project', None, 'Demo data cleanup', '',
+                         f"Removed {len(doomed_ids)} project(s), "
+                         f"{len(orphan_deliverables)} deliverable(s), "
+                         f"{len(orphan_budget)} budget entr(ies)")
+
+            remaining = execute_query("SELECT COUNT(*) AS n FROM projects")
+            return respond(200, {
+                'dry_run': False,
+                'removed': preview,
+                'projects_remaining': int(remaining[0]['n']) if remaining else 0,
+            })
+
         # ── CREATE: managers only; they own what they create ──────────
         if method == 'POST':
             deny_admin_business_action(user, 'create projects')
