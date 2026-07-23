@@ -51,6 +51,37 @@ def init_db():
     """)
 
 
+def init_updates_table():
+    """Timeline of progress notes and manager remarks against a deliverable."""
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS progress_updates (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            deliverable_id UUID NOT NULL,
+            author_name    VARCHAR(255) DEFAULT '',
+            author_role    VARCHAR(20)  DEFAULT '',
+            kind           VARCHAR(20)  DEFAULT 'progress',
+            from_pct       INTEGER,
+            to_pct         INTEGER,
+            from_status    VARCHAR(50),
+            to_status      VARCHAR(50),
+            note           TEXT         DEFAULT '',
+            created_at     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
+def record_update(user, deliverable_id, note, kind='progress',
+                  from_pct=None, to_pct=None, from_status=None, to_status=None):
+    init_updates_table()
+    execute_query("""
+        INSERT INTO progress_updates
+            (deliverable_id, author_name, author_role, kind,
+             from_pct, to_pct, from_status, to_status, note)
+        VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s)
+    """, (deliverable_id, user.get('name', ''), user.get('role', ''), kind,
+          from_pct, to_pct, from_status, to_status, note))
+
+
 def fetch_project(project_id):
     rows = execute_query("SELECT * FROM projects WHERE id = %s", (project_id,))
     return rows[0] if rows else None
@@ -120,6 +151,47 @@ def handler(event, context):
         item_id = get_id(event)
         qp = event.get('queryStringParameters') or {}
         body = json.loads(event['body']) if event.get('body') else {}
+
+        parts = [p for p in get_path(event).split('/') if p and p not in ('api', 'deliverables')]
+        wants_updates = len(parts) >= 2 and parts[1] == 'updates'
+        target_id = parts[0] if parts else None
+
+        # ── Timeline: GET /api/deliverables/{id}/updates ──────────────
+        if method == 'GET' and wants_updates:
+            init_updates_table()
+            try:
+                rows = execute_query(
+                    "SELECT * FROM progress_updates WHERE deliverable_id = %s::uuid"
+                    " ORDER BY created_at DESC",
+                    (target_id,))
+            except Exception as e:
+                # An unreadable history should not break the page it sits on.
+                print(f"progress_updates read failed for {target_id}: {e}")
+                rows = []
+            return respond(200, rows)
+
+        # ── Add a note or remark: POST /api/deliverables/{id}/updates ─
+        if method == 'POST' and wants_updates:
+            item = fetch_deliverable(target_id)
+            if not item:
+                return respond(404, {'message': 'Deliverable not found'})
+            note = (body.get('note') or '').strip()
+            if not note:
+                return respond(400, {'message': 'A note is required'})
+
+            project = fetch_project(item.get('project_id'))
+            is_owner = (project and project.get('manager') == user.get('name')
+                        and user['role'] == 'manager')
+            is_assignee = item.get('assigned_to') == user.get('name')
+            if not (is_owner or is_assignee or user['role'] == 'admin'):
+                raise AuthError(403, 'Only the project manager or the assignee can post here')
+
+            kind = 'remark' if is_owner and not is_assignee else 'note'
+            record_update(user, target_id, note, kind=kind)
+            audit.record(user, 'update', 'deliverable', target_id,
+                         item.get('name', ''), item.get('project_name', ''),
+                         f"{kind} added")
+            return respond(201, {'message': 'Posted'})
 
         # ── READ ──────────────────────────────────────────────────────
         if method == 'GET':
@@ -192,7 +264,8 @@ def handler(event, context):
             is_owner = project and project.get('manager') == user.get('name') and user['role'] == 'manager'
 
             # Members (and non-owning managers) may only self-report progress.
-            progress_only_fields = {'status', 'completion_percentage'}
+            # `note` counts as self-reporting: a progress move requires one.
+            progress_only_fields = {'status', 'completion_percentage', 'note'}
             requested = set(body.keys())
 
             if is_owner:
@@ -207,6 +280,7 @@ def handler(event, context):
             fields = ['project_name', 'name', 'description', 'status', 'due_date',
                       'assigned_to', 'depends_on', 'completion_percentage']
             payload = dict(body)
+            payload.pop('note', None)      # timeline text, not a column
 
             # Check the dependency against what the caller ASKED for, before any
             # normalisation rewrites it — otherwise an invalid request is
@@ -238,10 +312,30 @@ def handler(event, context):
                     params.append(val)
             if not sets:
                 return respond(400, {'message': 'No fields to update'})
+            # A progress move must say what changed — a bare percentage
+            # records nothing useful a week later.
+            old_pct = int(item.get('completion_percentage') or 0)
+            new_pct = int(payload.get('completion_percentage', old_pct) or 0)
+            old_status = item.get('status')
+            new_status = payload.get('status', old_status)
+            progress_moved = (new_pct != old_pct) or (new_status != old_status)
+            note = (body.get('note') or '').strip()
+
+            if progress_moved and not note:
+                return respond(400, {
+                    'message': 'Add a short note describing what changed.'
+                })
+
             sets.append("updated_at = CURRENT_TIMESTAMP")
             params.append(item_id)
             rows = execute_query(
                 f"UPDATE deliverables SET {', '.join(sets)} WHERE id = %s RETURNING *", params)
+
+            if progress_moved:
+                record_update(user, item_id, note, kind='progress',
+                              from_pct=old_pct, to_pct=new_pct,
+                              from_status=old_status, to_status=new_status)
+
             sync_project_completion(item.get('project_id'))
             audit.record(user, 'update', 'deliverable', item_id,
                          item.get('name', ''), item.get('project_name', ''))

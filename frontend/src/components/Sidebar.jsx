@@ -17,6 +17,7 @@ import PeopleIcon from '@mui/icons-material/GroupsRounded'
 import WalletIcon from '@mui/icons-material/AccountBalanceWalletRounded'
 import PersonIcon from '@mui/icons-material/PersonRounded'
 import HistoryIcon from '@mui/icons-material/HistoryRounded'
+import SupportIcon from '@mui/icons-material/SupportAgentRounded'
 import LogoutIcon from '@mui/icons-material/LogoutRounded'
 
 import { useAuth } from '../context/AuthContext'
@@ -37,6 +38,7 @@ const NAV = [
   { section: 'Account', items: [
     { to: '/profile',      label: 'My profile',   Icon: PersonIcon },
     { to: '/activity',     label: 'Activity log', Icon: HistoryIcon, roles: ['admin', 'manager'] },
+    { to: '/support',      label: 'Help & support', Icon: SupportIcon },
   ]},
 ]
 

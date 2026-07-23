@@ -27,6 +27,7 @@ import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
 import Snackbar from '@mui/material/Snackbar'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import DescriptionIcon from '@mui/icons-material/DescriptionRounded'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove'
 import { projectService } from '../services/projectService'
@@ -215,12 +216,17 @@ export default function ProjectDetail() {
                 {project.description || 'No description provided.'}
               </Typography>
             </Box>
-            {canEditProject(user, project) && (
-              <Button variant="outlined" onClick={() => navigate('/projects')}
-                sx={{ textTransform: 'none', borderRadius: 2 }}>
-                Edit Project
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button variant="outlined" startIcon={<DescriptionIcon />}
+                onClick={() => navigate(`/projects/${project.id}/report`)}>
+                Status report
               </Button>
-            )}
+              {canEditProject(user, project) && (
+                <Button variant="outlined" onClick={() => navigate('/projects')}>
+                  Edit project
+                </Button>
+              )}
+            </Box>
           </Box>
 
           <Divider sx={{ my: 2.5 }} />

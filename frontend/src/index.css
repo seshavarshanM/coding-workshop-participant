@@ -66,3 +66,19 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* Print: the app chrome is for working in, the report is for handing over. */
+@media print {
+  .no-print,
+  nav, header, aside,
+  .MuiDrawer-root,
+  .MuiAppBar-root { display: none !important; }
+
+  body { background: #fff !important; }
+  main { padding: 0 !important; max-width: none !important; }
+
+  /* Keep tables and sections from splitting across pages mid-row */
+  tr, .MuiTableRow-root { break-inside: avoid; }
+
+  a[href]:after { content: none !important; }
+}

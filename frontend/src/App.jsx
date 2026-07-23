@@ -12,6 +12,8 @@ import Resources from './pages/Resources'
 import Budget from './pages/Budget'
 import Profile from './pages/Profile'
 import Activity from './pages/Activity'
+import Support from './pages/Support'
+import ProjectReport from './pages/ProjectReport'
 
 
 function ProtectedRoute({ children }) {
@@ -35,6 +37,8 @@ function AppRoutes() {
         <Route path="budget"     element={<Budget />} />
         <Route path="profile"    element={<Profile />} />
         <Route path="activity"   element={<Activity />} />
+        <Route path="support"    element={<Support />} />
+        <Route path="projects/:id/report" element={<ProjectReport />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

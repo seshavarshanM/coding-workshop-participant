@@ -26,6 +26,7 @@ import Skeleton from '@mui/material/Skeleton'
 import Grid from '@mui/material/Grid'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
+import Divider from '@mui/material/Divider'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -40,6 +41,7 @@ import { peopleService } from '../services/peopleService'
 import StatusChip from '../components/StatusChip'
 import PageHeader from '../components/PageHeader'
 import ProjectGroupCard from '../components/ProjectGroupCard'
+import ProgressTimeline from '../components/ProgressTimeline'
 import { statusToken, palette } from '../theme/tokens'
 
 const EMPTY = {
@@ -59,6 +61,8 @@ export default function Deliverables() {
   const [saving, setSaving] = useState(false)
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
   const [touched, setTouched] = useState({})
+  const [note, setNote] = useState('')
+  const [original, setOriginal] = useState({ pct: 0, status: '' })
 
   const [people, setPeople] = useState([])
   useEffect(() => {
@@ -122,11 +126,13 @@ export default function Deliverables() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY, limited: false }) }
-  const openEdit   = (d, limited = false) => { setTouched({}); setDialog({
-    open: true, mode: 'edit', limited,
-    data: { ...d, due_date: d.due_date?.split('T')[0] || '' }
-  }) }
+  const openCreate = () => { setTouched({}); setNote(''); setOriginal({ pct: 0, status: 'pending' }); setDialog({ open: true, mode: 'create', data: EMPTY, limited: false }) }
+  const openEdit   = (d, limited = false) => {
+    setTouched({}); setNote('')
+    setOriginal({ pct: Number(d.completion_percentage || 0), status: d.status })
+    setDialog({ open: true, mode: 'edit', limited,
+      data: { ...d, due_date: d.due_date?.split('T')[0] || '' } })
+  }
   const closeDialog = () => setDialog(d => ({ ...d, open: false }))
 
   // ── Validation ──────────────────────────────────────────────
@@ -154,30 +160,65 @@ export default function Deliverables() {
       errs.status = completionBlockReason(d, items)
     return errs
   }
+  const progressMoved = dialog.mode === 'edit' && (
+    Number(dialog.data.completion_percentage || 0) !== original.pct ||
+    dialog.data.status !== original.status
+  )
+
   const errors = validate(dialog.data)
-  const isValid = Object.keys(errors).length === 0
+  const isValid = Object.keys(errors).length === 0 && (!progressMoved || note.trim().length > 0)
   const showErr = (field) => touched[field] && errors[field]
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      const payload = { ...dialog.data }
-      // auto-fill project_name from selected project
-      if (payload.project_id) {
+      if (dialog.mode === 'create') {
+        const payload = {
+          project_id: dialog.data.project_id,
+          name: dialog.data.name,
+          description: dialog.data.description,
+          status: dialog.data.status,
+          due_date: dialog.data.due_date,
+          assigned_to: dialog.data.assigned_to,
+          depends_on: dialog.data.depends_on || null,
+          completion_percentage: Number(dialog.data.completion_percentage || 0),
+        }
         const proj = projects.find(p => p.id === payload.project_id)
         if (proj) payload.project_name = proj.name
-      }
-      if (dialog.mode === 'create') {
         await deliverableService.create(payload)
         setSnack({ open: true, msg: 'Deliverable created', sev: 'success' })
       } else {
+        // Send only the fields this dialog is allowed to change. A member's
+        // progress update must not carry name, assignee or dates, or the API
+        // will reject the whole request as an attempt to edit the deliverable.
+        const payload = dialog.limited
+          ? {
+              status: dialog.data.status,
+              completion_percentage: Number(dialog.data.completion_percentage || 0),
+            }
+          : {
+              project_id: dialog.data.project_id,
+              name: dialog.data.name,
+              description: dialog.data.description,
+              status: dialog.data.status,
+              due_date: dialog.data.due_date,
+              assigned_to: dialog.data.assigned_to,
+              depends_on: dialog.data.depends_on || null,
+              completion_percentage: Number(dialog.data.completion_percentage || 0),
+            }
+        if (!dialog.limited) {
+          const proj = projects.find(p => p.id === payload.project_id)
+          if (proj) payload.project_name = proj.name
+        }
+        if (note.trim()) payload.note = note.trim()
         await deliverableService.update(dialog.data.id, payload)
-        setSnack({ open: true, msg: 'Deliverable updated', sev: 'success' })
+        setSnack({ open: true, msg: 'Progress updated', sev: 'success' })
       }
       closeDialog()
       load()
     } catch (e) {
-      setSnack({ open: true, msg: e.message, sev: 'error' })
+      setSnack({ open: true, sev: 'error',
+        msg: e?.response?.data?.message || e.message })
     } finally {
       setSaving(false)
     }
@@ -510,6 +551,27 @@ export default function Deliverables() {
                     ? 'Locked until the dependency is complete'
                     : 'Linked to status: 100% = Completed')} />
             </Grid>
+            {progressMoved && (
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth multiline rows={2} required
+                  label="What changed?"
+                  value={note} onChange={e => setNote(e.target.value)}
+                  placeholder="e.g. Endpoints implemented, starting integration tests"
+                  helperText="A note is required when progress moves — it is what makes this history useful later."
+                />
+              </Grid>
+            )}
+
+            {dialog.mode === 'edit' && dialog.data.id && (
+              <Grid item xs={12}>
+                <Divider sx={{ mb: 2 }} />
+                <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                  History
+                </Typography>
+                <ProgressTimeline deliverableId={dialog.data.id} canPost />
+              </Grid>
+            )}
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
