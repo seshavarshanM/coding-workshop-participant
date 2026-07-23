@@ -30,8 +30,9 @@ import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { deliverableService } from '../services/deliverableService'
 import { useAuth } from '../context/AuthContext'
-import { can, canUpdateProgress } from '../utils/permissions'
+import { can, canUpdateProgress, canEditDeliverable, canDeleteDeliverable } from '../utils/permissions'
 import { projectService } from '../services/projectService'
+import { peopleService } from '../services/peopleService'
 import StatusChip from '../components/StatusChip'
 
 const EMPTY = {
@@ -52,8 +53,10 @@ export default function Deliverables() {
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
   const [touched, setTouched] = useState({})
 
+  const [people, setPeople] = useState([])
   useEffect(() => {
     projectService.getAll().then(setProjects).catch(() => {})
+    peopleService.getAll().then(setPeople).catch(() => {})
   }, [])
 
   const load = useCallback(async () => {
@@ -243,12 +246,12 @@ export default function Deliverables() {
                         </Box>
                       </TableCell>
                       <TableCell align="center">
-                        {can(user, 'deliverable:edit') ? (
+                        {canEditDeliverable(user, d, projects) ? (
                           <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(d)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-                        ) : canUpdateProgress(user, d) && (
+                        ) : canUpdateProgress(user, d, projects) && (
                           <Tooltip title="Update my progress"><IconButton size="small" color="primary" onClick={() => openEdit(d, true)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                         )}
-                        {can(user, 'deliverable:delete') && (
+                        {canDeleteDeliverable(user, d, projects) && (
                           <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(d)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
                         )}
                       </TableCell>
@@ -310,8 +313,15 @@ export default function Deliverables() {
                 error={!!showErr('due_date')} helperText={showErr('due_date') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Assigned to *" value={dialog.data.assigned_to} onChange={f('assigned_to')}
-                error={!!showErr('assigned_to')} helperText={showErr('assigned_to') || ''} />
+              <TextField fullWidth select label="Assigned to *" value={dialog.data.assigned_to} onChange={f('assigned_to')}
+                error={!!showErr('assigned_to')} helperText={showErr('assigned_to') || ''}>
+                {people.length === 0 && <MenuItem disabled value="">No people found</MenuItem>}
+                {people.map(pp => (
+                  <MenuItem key={pp.id} value={pp.name}>
+                    {pp.name} · {pp.title || pp.role}
+                  </MenuItem>
+                ))}
+              </TextField>
             </Grid>
             </>)}
             <Grid item xs={6}>

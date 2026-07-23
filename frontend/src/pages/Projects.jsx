@@ -35,6 +35,7 @@ import InputAdornment from '@mui/material/InputAdornment'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import ReportProblemIcon from '@mui/icons-material/ReportProblem'
 import { projectService } from '../services/projectService'
+import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
 import { can } from '../utils/permissions'
 import { isAtRisk, riskReason } from '../utils/risk'
@@ -54,6 +55,7 @@ export default function Projects() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [sort, setSort] = useState({ field: '', dir: 'asc' })
+  const [people, setPeople] = useState([])
   const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY_FORM })
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -75,6 +77,7 @@ export default function Projects() {
   }, [statusFilter, search])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { peopleService.getAll().then(setPeople).catch(() => {}) }, [])
 
   const PRIORITY_ORDER = { low: 0, medium: 1, high: 2, critical: 3 }
   const toggleSort = (field) => setSort(s =>
@@ -328,10 +331,19 @@ export default function Projects() {
                 error={!!showErr('department')} helperText={showErr('department') || ''} />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Manager *" value={dialog.data.manager} onChange={f('manager')}
+              <TextField fullWidth select label="Manager *" value={dialog.data.manager} onChange={f('manager')}
                 disabled={managerLocked}
                 error={!!showErr('manager')}
-                helperText={showErr('manager') || (managerLocked ? 'Projects you create are owned by you' : '')} />
+                helperText={showErr('manager') || (managerLocked ? 'Projects you create are owned by you' : '')}>
+                {people.filter(pp => pp.role === 'manager' || pp.role === 'admin').length === 0 && (
+                  <MenuItem disabled value="">No managers found</MenuItem>
+                )}
+                {people.filter(pp => pp.role === 'manager' || pp.role === 'admin').map(pp => (
+                  <MenuItem key={pp.id} value={pp.name}>
+                    {pp.name} · {pp.title || pp.role}
+                  </MenuItem>
+                ))}
+              </TextField>
             </Grid>
             <Grid item xs={6}>
               <TextField fullWidth type="date" label="Start date *" value={dialog.data.start_date} onChange={f('start_date')} InputLabelProps={{ shrink: true }}

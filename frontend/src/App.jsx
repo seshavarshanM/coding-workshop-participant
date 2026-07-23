@@ -9,6 +9,7 @@ import ProjectDetail from './pages/ProjectDetail'
 import Deliverables from './pages/Deliverables'
 import Resources from './pages/Resources'
 import Budget from './pages/Budget'
+import Profile from './pages/Profile'
 
 const theme = createTheme({
   palette: {
@@ -69,6 +70,7 @@ function AppRoutes() {
         <Route path="deliverables" element={<Deliverables />} />
         <Route path="resources"  element={<Resources />} />
         <Route path="budget"     element={<Budget />} />
+        <Route path="profile"    element={<Profile />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

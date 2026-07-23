@@ -1,41 +1,69 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
+import { peopleService } from '../services/peopleService'
+import api from '../services/api'
 
 const AuthContext = createContext(null)
 
-// Demo accounts — replace with a real /api/auth endpoint later
-const DEMO_USERS = [
-  { id: '1', name: 'Alice Admin',   email: 'admin@acme.com',   role: 'admin'   },
-  { id: '2', name: 'Mike Manager',  email: 'manager@acme.com', role: 'manager' },
-  { id: '3', name: 'Sam Member',    email: 'member@acme.com',  role: 'member'  },
-]
+const STORAGE_KEY = 'acme_session'
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
+  const [session, setSession] = useState(() => {
     try {
-      const s = sessionStorage.getItem('acme_user')
-      return s ? JSON.parse(s) : null
+      const raw = sessionStorage.getItem(STORAGE_KEY)
+      return raw ? JSON.parse(raw) : null
     } catch {
       return null
     }
   })
 
-  const login = (email, password) => {
-    const found = DEMO_USERS.find(u => u.email === email.trim().toLowerCase())
-    if (found && password === 'password') {
-      sessionStorage.setItem('acme_user', JSON.stringify(found))
-      setUser(found)
-      return { success: true }
+  // Attach the JWT to every outgoing request while a session exists.
+  useEffect(() => {
+    if (session?.token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${session.token}`
+    } else {
+      delete api.defaults.headers.common['Authorization']
     }
-    return { success: false, message: 'Invalid email or password' }
+  }, [session])
+
+  /** Authenticates against the backend; password is verified with bcrypt server-side. */
+  const login = async (email, password) => {
+    try {
+      const data = await peopleService.login(email, password)
+      const next = { token: data.token, user: data.user }
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      setSession(next)
+      return { success: true }
+    } catch (err) {
+      const message =
+        err?.response?.status === 401
+          ? 'Invalid email or password'
+          : err?.response?.data?.message || 'Could not reach the server. Is the backend running?'
+      return { success: false, message }
+    }
   }
 
   const logout = () => {
-    sessionStorage.removeItem('acme_user')
-    setUser(null)
+    sessionStorage.removeItem(STORAGE_KEY)
+    setSession(null)
+  }
+
+  /** Refresh the cached profile (e.g. after the user edits their own details). */
+  const refreshUser = async () => {
+    if (!session?.user?.id) return
+    try {
+      const fresh = await peopleService.getById(session.user.id)
+      const next = { ...session, user: fresh }
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      setSession(next)
+    } catch {
+      /* non-fatal */
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider
+      value={{ user: session?.user || null, token: session?.token || null, login, logout, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   )

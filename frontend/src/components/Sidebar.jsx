@@ -14,6 +14,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import AssignmentIcon from '@mui/icons-material/Assignment'
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt'
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'
+import PersonIcon from '@mui/icons-material/Person'
 import LogoutIcon from '@mui/icons-material/Logout'
 
 import { useAuth } from '../context/AuthContext'
@@ -24,6 +25,7 @@ const NAV = [
   { to: '/deliverables', label: 'Deliverables', Icon: AssignmentIcon            },
   { to: '/resources',    label: 'Resources',    Icon: PeopleAltIcon             },
   { to: '/budget',       label: 'Budget',       Icon: AccountBalanceWalletIcon  },
+  { to: '/profile',      label: 'My Profile',   Icon: PersonIcon                },
 ]
 
 const SIDEBAR_BG  = '#0F172A'
@@ -111,7 +113,7 @@ export default function Sidebar({ onClose }) {
               {user?.name}
             </Typography>
             <Typography sx={{ color: MUTED_TEXT, fontSize: '0.7rem', textTransform: 'capitalize' }}>
-              {user?.role}
+              {user?.role}{user?.employee_id ? ` · ${user.employee_id}` : ''}
             </Typography>
           </Box>
         </Box>

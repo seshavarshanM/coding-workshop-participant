@@ -265,3 +265,17 @@ backend/*/.pip_installed
 
 # Local zip exports
 *.zip
+backend/*/bcrypt*/
+backend/*/jwt/
+backend/*/PyJWT*/
+backend/*/psycopg*/
+backend/*/*.dist-info/
+backend/*/*.libs/
+backend/*/.pip_installed
+backend/*/bcrypt*/
+backend/*/jwt/
+backend/*/PyJWT*/
+backend/*/psycopg*/
+backend/*/*.dist-info/
+backend/*/*.libs/
+backend/*/.pip_installed

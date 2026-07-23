@@ -32,9 +32,9 @@ import PersonRemoveIcon from '@mui/icons-material/PersonRemove'
 import { projectService } from '../services/projectService'
 import { deliverableService } from '../services/deliverableService'
 import { budgetService } from '../services/budgetService'
-import { resourceService } from '../services/resourceService'
+import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
-import { can } from '../utils/permissions'
+import { can, canManageProjectTeam } from '../utils/permissions'
 import StatusChip from '../components/StatusChip'
 
 // ── Team-membership helpers (stored in resource.projects CSV as "Name (Xh)") ──
@@ -89,7 +89,7 @@ export default function ProjectDetail() {
       projectService.getById(id),
       deliverableService.getAll({ project_id: id }),
       budgetService.getAll({ project_id: id }),
-      resourceService.getAll(),
+      peopleService.getAll(),
     ])
       .then(([p, d, b, r]) => {
         setProject(p)
@@ -145,7 +145,7 @@ export default function ProjectDetail() {
     try {
       const r = selectedResource
       const newProjects = [...entriesOf(r), teamEntry(project.name, hoursNum)].join(', ')
-      await resourceService.update(r.id, {
+      await peopleService.update(r.id, {
         projects: newProjects,
         allocated_hours: Number(r.allocated_hours || 0) + hoursNum,
       })
@@ -166,7 +166,7 @@ export default function ProjectDetail() {
       const newProjects = entriesOf(r)
         .filter(e => !(e === project.name || e.startsWith(`${project.name} (`)))
         .join(', ')
-      await resourceService.update(r.id, {
+      await peopleService.update(r.id, {
         projects: newProjects,
         allocated_hours: Math.max(0, Number(r.allocated_hours || 0) - hrs),
       })
@@ -186,7 +186,7 @@ export default function ProjectDetail() {
     : Number(project.completion_percentage || 0)
   const doneCount = deliverables.filter(d => d.status === 'completed').length
   const totalDels = deliverables.length
-  const canManageTeam = can(user, 'resource:edit')
+  const canManageTeam = canManageProjectTeam(user, project)
 
   return (
     <Box>
