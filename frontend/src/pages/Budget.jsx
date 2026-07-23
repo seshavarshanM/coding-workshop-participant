@@ -33,7 +33,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import { budgetService } from '../services/budgetService'
 import { useAuth } from '../context/AuthContext'
-import { can } from '../utils/permissions'
+import { can, canEditBudgetEntry, canDeleteBudgetEntry, ADMIN_READONLY_NOTE } from '../utils/permissions'
 import { projectService } from '../services/projectService'
 
 const CATEGORIES = ['Personnel','Infrastructure','Tooling','Vendor','Training','Marketing','Operations','Other']
@@ -100,11 +100,23 @@ export default function Budget() {
     else if (Number(d.planned_amount) < 0) errs.planned_amount = 'Cannot be negative'
     if (d.actual_amount !== '' && Number(d.actual_amount) < 0) errs.actual_amount = 'Cannot be negative'
     if (!d.entry_date) errs.entry_date = 'Date is required'
+    else {
+      const proj = projects.find(p => p.id === d.project_id)
+      if (proj?.start_date && d.entry_date < proj.start_date.split('T')[0])
+        errs.entry_date = `Cannot be before the project starts (${new Date(proj.start_date).toLocaleDateString()})`
+      else if (proj?.end_date && d.entry_date > proj.end_date.split('T')[0])
+        errs.entry_date = `Cannot be after the project deadline (${new Date(proj.end_date).toLocaleDateString()})`
+    }
     return errs
   }
   const errors = validate(dialog.data)
   const isValid = Object.keys(errors).length === 0
   const showErr = (field) => touched[field] && errors[field]
+
+  // Managers may only record budget against projects they manage.
+  const assignableProjects = projects.filter(
+    p => user?.role === 'admin' || p.manager === user?.name
+  )
 
   // ── Tier A: warn if this project's planned entries would exceed its budget ceiling ──
   const selectedProject = projects.find(p => p.id === dialog.data.project_id)
@@ -169,13 +181,17 @@ export default function Budget() {
           <Typography variant="h5" fontWeight={700}>Budget</Typography>
           <Typography variant="body2" color="text.secondary">{entries.length} entries</Typography>
         </Box>
-        {can(user, 'budget:create') && (
+        {can(user, 'budget:propose') && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
             sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-            New Entry
+            Propose Entry
           </Button>
         )}
       </Box>
+
+      {user?.role === 'admin' && (
+        <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>{ADMIN_READONLY_NOTE}</Alert>
+      )}
 
       {/* Summary cards */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -281,10 +297,10 @@ export default function Budget() {
                           </Box>
                         </TableCell>
                         <TableCell align="center">
-                          {can(user, 'budget:edit') && (
+                          {canEditBudgetEntry(user, e, projects) && (
                             <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(e)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                           )}
-                          {can(user, 'budget:delete') && (
+                          {canDeleteBudgetEntry(user, e, projects) && (
                             <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(e)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
                           )}
                         </TableCell>
@@ -299,14 +315,17 @@ export default function Budget() {
 
       {/* Dialog */}
       <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>
-        <DialogTitle fontWeight={700}>{dialog.mode === 'create' ? 'New Budget Entry' : 'Edit Entry'}</DialogTitle>
+        <DialogTitle fontWeight={700}>{dialog.mode === 'create' ? 'Propose Budget Entry' : 'Edit Entry'}</DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ pt: 0.5 }}>
             <Grid item xs={12}>
               <FormControl fullWidth error={!!showErr('project_id')}>
                 <InputLabel>Project *</InputLabel>
                 <Select label="Project *" value={dialog.data.project_id} onChange={f('project_id')}>
-                  {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                  {assignableProjects.length === 0 && (
+                    <MenuItem disabled value="">You do not manage any projects</MenuItem>
+                  )}
+                  {assignableProjects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                 </Select>
               </FormControl>
             </Grid>
@@ -319,8 +338,15 @@ export default function Budget() {
               </FormControl>
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="date" label="Date *" value={dialog.data.entry_date} onChange={f('entry_date')} InputLabelProps={{ shrink: true }}
-                error={!!showErr('entry_date')} helperText={showErr('entry_date') || ''} />
+              <TextField fullWidth type="date" label="Date *" value={dialog.data.entry_date} onChange={f('entry_date')}
+                InputLabelProps={{ shrink: true }}
+                inputProps={{
+                  min: selectedProject?.start_date ? selectedProject.start_date.split('T')[0] : undefined,
+                  max: selectedProject?.end_date ? selectedProject.end_date.split('T')[0] : undefined,
+                }}
+                error={!!showErr('entry_date')}
+                helperText={showErr('entry_date') ||
+                  (selectedProject ? 'Must fall within the project window' : 'Select a project first')} />
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth label="Description" value={dialog.data.description} onChange={f('description')} />

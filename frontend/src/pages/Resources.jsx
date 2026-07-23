@@ -27,7 +27,7 @@ import EmailIcon from '@mui/icons-material/Email'
 import BadgeIcon from '@mui/icons-material/Badge'
 import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
-import { can } from '../utils/permissions'
+import { can, canHire } from '../utils/permissions'
 
 const EMPTY = {
   name: '', email: '', password: '', role: 'member', title: '', department: '',
@@ -107,7 +107,7 @@ export default function Resources() {
       if (!payload.password) delete payload.password   // don't overwrite on edit
       if (dialog.mode === 'create') {
         await peopleService.create(payload)
-        setSnack({ open: true, msg: 'Team member added', sev: 'success' })
+        setSnack({ open: true, msg: 'Team member hired and onboarded', sev: 'success' })
       } else {
         await peopleService.update(dialog.data.id, payload)
         setSnack({ open: true, msg: 'Team member updated', sev: 'success' })
@@ -159,10 +159,10 @@ export default function Resources() {
             )}
           </Box>
         </Box>
-        {can(user, 'resource:create') && (
+        {canHire(user) && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
             sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
-            Add Member
+            Hire Member
           </Button>
         )}
       </Box>
@@ -231,14 +231,14 @@ export default function Resources() {
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', flexShrink: 0 }}>
-                        {can(user, 'resource:edit') && (
+                        {can(user, 'person:edit') && (
                           <Tooltip title="Edit">
                             <IconButton size="small" onClick={() => openEdit(r)}>
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                         )}
-                        {can(user, 'resource:delete') && (
+                        {can(user, 'person:delete') && (
                           <Tooltip title="Remove">
                             <IconButton size="small" color="error" onClick={() => setDelConfirm(r)}>
                               <DeleteIcon fontSize="small" />
@@ -320,7 +320,7 @@ export default function Resources() {
       {/* Create / edit dialog */}
       <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>
         <DialogTitle fontWeight={700}>
-          {dialog.mode === 'create' ? 'Add Team Member' : `Edit ${dialog.data.name}`}
+          {dialog.mode === 'create' ? 'Hire Team Member' : `Edit ${dialog.data.name}`}
         </DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ pt: 0.5 }}>

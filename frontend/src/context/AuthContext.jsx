@@ -1,6 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { peopleService } from '../services/peopleService'
-import api from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -16,14 +15,9 @@ export function AuthProvider({ children }) {
     }
   })
 
-  // Attach the JWT to every outgoing request while a session exists.
-  useEffect(() => {
-    if (session?.token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${session.token}`
-    } else {
-      delete api.defaults.headers.common['Authorization']
-    }
-  }, [session])
+  // The token is attached per-request by an interceptor in services/api.js,
+  // which reads it from sessionStorage. That avoids a race on first paint:
+  // child components fire their data effects before a provider effect runs.
 
   /** Authenticates against the backend; password is verified with bcrypt server-side. */
   const login = async (email, password) => {

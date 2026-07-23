@@ -1,16 +1,15 @@
+"""
+Deliverables service.
+
+Managers create and manage deliverables on projects they own.
+Members may update status/completion only on deliverables assigned to them.
+Administrators oversee but do not assign work.
+"""
 import json
 from postgres_service import execute_query
-
-HEADERS = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-}
-
-
-def respond(status, body):
-    return {'statusCode': status, 'headers': HEADERS, 'body': json.dumps(body, default=str)}
+from auth import require_auth, require_role, require_project_owner, \
+                 deny_admin_business_action, respond, AuthError, handle_auth_error
+import audit
 
 
 def get_method(event):
@@ -29,8 +28,7 @@ def get_id(event):
     pp = event.get('pathParameters') or {}
     if pp.get('id'):
         return pp['id']
-    path = get_path(event)
-    parts = [p for p in path.split('/') if p and p not in ('api', 'deliverables')]
+    parts = [p for p in get_path(event).split('/') if p and p not in ('api', 'deliverables')]
     return parts[-1] if parts else None
 
 
@@ -53,21 +51,60 @@ def init_db():
     """)
 
 
+def fetch_project(project_id):
+    rows = execute_query("SELECT * FROM projects WHERE id = %s", (project_id,))
+    return rows[0] if rows else None
+
+
+def fetch_deliverable(item_id):
+    rows = execute_query("SELECT * FROM deliverables WHERE id = %s", (item_id,))
+    return rows[0] if rows else None
+
+
+def sync_project_completion(project_id):
+    """Tier A: project completion is derived from its deliverables."""
+    if not project_id:
+        return
+    rows = execute_query(
+        "SELECT completion_percentage FROM deliverables WHERE project_id = %s", (project_id,))
+    if rows:
+        avg = round(sum(int(r['completion_percentage'] or 0) for r in rows) / len(rows))
+        execute_query(
+            "UPDATE projects SET completion_percentage = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (avg, project_id))
+
+
+def normalize_status(status, pct):
+    """Status and completion must never contradict each other."""
+    if pct is None:
+        return status, pct
+    pct = max(0, min(100, int(pct)))
+    if pct == 100:
+        return 'completed', 100
+    if pct == 0 and status == 'completed':
+        return 'pending', 0
+    if status == 'completed' and pct < 100:
+        return 'in_progress', pct
+    return status, pct
+
+
 def handler(event, context):
+    method = get_method(event)
+    if method == 'OPTIONS':
+        return respond(200, {})
+
     try:
         init_db()
-        method = get_method(event)
+        user = require_auth(event)
         item_id = get_id(event)
         qp = event.get('queryStringParameters') or {}
         body = json.loads(event['body']) if event.get('body') else {}
 
-        if method == 'OPTIONS':
-            return respond(200, {})
-
+        # ── READ ──────────────────────────────────────────────────────
         if method == 'GET':
             if item_id:
-                rows = execute_query("SELECT * FROM deliverables WHERE id = %s", (item_id,))
-                return respond(200, rows[0]) if rows else respond(404, {'message': 'Not found'})
+                item = fetch_deliverable(item_id)
+                return respond(200, item) if item else respond(404, {'message': 'Not found'})
 
             conds, params = [], []
             if qp.get('project_id'):
@@ -76,63 +113,116 @@ def handler(event, context):
             if qp.get('status'):
                 conds.append("status = %s")
                 params.append(qp['status'])
-            if qp.get('search'):
-                conds.append("(name ILIKE %s OR description ILIKE %s)")
-                params += [f"%{qp['search']}%", f"%{qp['search']}%"]
+            if qp.get('assigned_to'):
+                conds.append("assigned_to = %s")
+                params.append(qp['assigned_to'])
             where = f"WHERE {' AND '.join(conds)}" if conds else ""
-            rows = execute_query(
+            return respond(200, execute_query(
                 f"SELECT * FROM deliverables {where} ORDER BY due_date ASC NULLS LAST",
-                params or None
-            )
-            return respond(200, rows)
+                params or None))
 
+        # ── CREATE: owning manager only ───────────────────────────────
         if method == 'POST':
+            deny_admin_business_action(user, 'create deliverables')
+            project = fetch_project(body.get('project_id'))
+            require_project_owner(user, project, 'add deliverables to this project')
+
+            status, pct = normalize_status(
+                body.get('status', 'pending'), body.get('completion_percentage', 0))
             rows = execute_query("""
                 INSERT INTO deliverables
                     (project_id, project_name, name, description, status,
-                     due_date, assigned_to, completion_percentage)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                     due_date, assigned_to, depends_on, completion_percentage)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING *
             """, (
-                body.get('project_id') or None,
-                body.get('project_name', ''),
+                body.get('project_id'),
+                project.get('name', ''),
                 body.get('name', 'Untitled Deliverable'),
                 body.get('description', ''),
-                body.get('status', 'pending'),
+                status,
                 body.get('due_date') or None,
                 body.get('assigned_to', ''),
-                int(body.get('completion_percentage') or 0),
+                body.get('depends_on') or None,
+                pct,
             ))
-            return respond(201, rows[0] if rows else {})
+            created = rows[0] if rows else {}
+            sync_project_completion(body.get('project_id'))
+            audit.record(user, 'create', 'deliverable', created.get('id'),
+                         created.get('name', ''), project.get('name', ''))
+            return respond(201, created)
 
+        # ── UPDATE ────────────────────────────────────────────────────
         if method == 'PUT' and item_id:
-            fields = [
-                'project_id', 'project_name', 'name', 'description', 'status',
-                'due_date', 'assigned_to', 'completion_percentage'
-            ]
+            item = fetch_deliverable(item_id)
+            if not item:
+                return respond(404, {'message': 'Not found'})
+            project = fetch_project(item.get('project_id'))
+
+            is_assignee = item.get('assigned_to') == user.get('name')
+            is_owner = project and project.get('manager') == user.get('name') and user['role'] == 'manager'
+
+            # Members (and non-owning managers) may only self-report progress.
+            progress_only_fields = {'status', 'completion_percentage'}
+            requested = set(body.keys())
+
+            if is_owner:
+                pass                                    # full edit allowed
+            elif is_assignee and requested <= progress_only_fields:
+                pass                                    # self-reporting allowed
+            else:
+                raise AuthError(403,
+                    'You can only update deliverables on projects you manage, '
+                    'or report progress on work assigned to you')
+
+            fields = ['project_name', 'name', 'description', 'status', 'due_date',
+                      'assigned_to', 'depends_on', 'completion_percentage']
+            payload = dict(body)
+            if 'status' in payload or 'completion_percentage' in payload:
+                s, p = normalize_status(
+                    payload.get('status', item.get('status')),
+                    payload.get('completion_percentage', item.get('completion_percentage')))
+                payload['status'] = s
+                payload['completion_percentage'] = p
+
             sets, params = [], []
             for f in fields:
-                if f in body:
+                if f in payload:
                     sets.append(f"{f} = %s")
-                    val = body[f]
-                    if f in ('due_date',) and val == '':
-                        val = None
-                    if f == 'project_id' and val == '':
+                    val = payload[f]
+                    if f in ('due_date', 'depends_on') and val == '':
                         val = None
                     params.append(val)
+            if not sets:
+                return respond(400, {'message': 'No fields to update'})
             sets.append("updated_at = CURRENT_TIMESTAMP")
             params.append(item_id)
             rows = execute_query(
-                f"UPDATE deliverables SET {', '.join(sets)} WHERE id = %s RETURNING *",
-                params
-            )
+                f"UPDATE deliverables SET {', '.join(sets)} WHERE id = %s RETURNING *", params)
+            sync_project_completion(item.get('project_id'))
+            audit.record(user, 'update', 'deliverable', item_id,
+                         item.get('name', ''), item.get('project_name', ''))
             return respond(200, rows[0] if rows else {})
 
+        # ── DELETE: owning manager only ───────────────────────────────
         if method == 'DELETE' and item_id:
+            deny_admin_business_action(user, 'delete deliverables')
+            item = fetch_deliverable(item_id)
+            if not item:
+                return respond(404, {'message': 'Not found'})
+            project = fetch_project(item.get('project_id'))
+            require_project_owner(user, project, 'delete deliverables on this project')
+
             execute_query("DELETE FROM deliverables WHERE id = %s", (item_id,))
-            return respond(200, {'message': 'Deliverable deleted'})
+            sync_project_completion(item.get('project_id'))
+            audit.record(user, 'delete', 'deliverable', item_id,
+                         item.get('name', ''), item.get('project_name', ''),
+                         f"Removed by {user['name']}")
+            return respond(200, {'message': 'Deliverable deleted', 'deleted_by': user['name']})
 
         return respond(405, {'message': 'Method not allowed'})
 
+    except AuthError as e:
+        return handle_auth_error(e)
     except Exception as e:
         return respond(500, {'message': str(e)})

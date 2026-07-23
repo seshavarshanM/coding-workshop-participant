@@ -17,4 +17,7 @@ export const budgetService = {
   create:  (data) => api.post(BASE, data).then(r => r.data),
   update:  (id, data) => api.put(`${BASE}/${id}`, data).then(r => r.data),
   remove:  (id) => api.delete(`${BASE}/${id}`).then(r => r.data),
+
+  // Soft-deleted entries, retained for the audit trail.
+  deleted: () => api.get(`${BASE}/deleted`).then(r => Array.isArray(r.data) ? r.data : []),
 }

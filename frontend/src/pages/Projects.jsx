@@ -37,7 +37,7 @@ import ReportProblemIcon from '@mui/icons-material/ReportProblem'
 import { projectService } from '../services/projectService'
 import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
-import { can } from '../utils/permissions'
+import { can, canEditProject, canDeleteProject, ADMIN_READONLY_NOTE } from '../utils/permissions'
 import { isAtRisk, riskReason } from '../utils/risk'
 import StatusChip from '../components/StatusChip'
 
@@ -100,8 +100,6 @@ export default function Projects() {
     return sort.dir === 'asc' ? cmp : -cmp
   })
 
-  const canEditProject = (p) =>
-    can(user, 'project:edit') && (user.role === 'admin' || p.manager === user.name)
   const managerLocked = user?.role === 'manager'
 
   const openCreate = () => { setTouched({}); setDialog({
@@ -182,6 +180,10 @@ export default function Projects() {
           </Button>
         )}
       </Box>
+
+      {user?.role === 'admin' && (
+        <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>{ADMIN_READONLY_NOTE}</Alert>
+      )}
 
       {/* Filters */}
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
@@ -277,10 +279,10 @@ export default function Projects() {
                       </TableCell>
                       <TableCell align="center">
                         <Tooltip title="Open"><IconButton size="small" onClick={() => navigate(`/projects/${p.id}`)}><OpenInNewIcon fontSize="small" /></IconButton></Tooltip>
-                        {canEditProject(p) && (
+                        {canEditProject(user, p) && (
                           <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(p)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                         )}
-                        {can(user, 'project:delete') && (
+                        {canDeleteProject(user) && (
                           <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(p)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
                         )}
                       </TableCell>

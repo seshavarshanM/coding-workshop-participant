@@ -21,4 +21,8 @@ export const peopleService = {
   login:   (email, password) =>
     api.post(`${BASE}/login`, { email, password }).then(r => r.data),
   seed:    () => api.post(`${BASE}/seed`).then(r => r.data),
+
+  // Activity trail — admins see all actions, managers see their own.
+  audit:   (params = {}) =>
+    api.get(`${BASE}/audit`, { params }).then(r => ensureArray(r.data, 'GET /people/audit')),
 }

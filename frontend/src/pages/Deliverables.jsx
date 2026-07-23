@@ -30,7 +30,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { deliverableService } from '../services/deliverableService'
 import { useAuth } from '../context/AuthContext'
-import { can, canUpdateProgress, canEditDeliverable, canDeleteDeliverable } from '../utils/permissions'
+import { can, canUpdateProgress, canEditDeliverable, canDeleteDeliverable, ADMIN_READONLY_NOTE } from '../utils/permissions'
 import { projectService } from '../services/projectService'
 import { peopleService } from '../services/peopleService'
 import StatusChip from '../components/StatusChip'
@@ -58,6 +58,21 @@ export default function Deliverables() {
     projectService.getAll().then(setProjects).catch(() => {})
     peopleService.getAll().then(setPeople).catch(() => {})
   }, [])
+
+  // ── Scoping helpers ────────────────────────────────────────────────
+  // Managers may only create/edit deliverables on projects they manage.
+  const assignableProjects = projects.filter(
+    p => user?.role === 'admin' || p.manager === user?.name
+  )
+  // The project selected in the dialog (used for team + date constraints).
+  const dialogProject = projects.find(p => p.id === dialog.data.project_id)
+  // Only people actually allocated to that project may be assigned work on it.
+  const projectTeam = dialogProject
+    ? people.filter(pp => {
+        const list = (pp.projects || '').split(',').map(x => x.trim())
+        return list.some(e => e === dialogProject.name || e.startsWith(`${dialogProject.name} (`))
+      })
+    : []
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -88,7 +103,16 @@ export default function Deliverables() {
     if (!d.name?.trim()) errs.name = 'Deliverable name is required'
     if (!d.project_id) errs.project_id = 'Project is required'
     if (!d.due_date) errs.due_date = 'Due date is required'
+    else if (dialogProject) {
+      if (dialogProject.start_date && d.due_date < dialogProject.start_date.split('T')[0])
+        errs.due_date = `Cannot be before the project starts (${new Date(dialogProject.start_date).toLocaleDateString()})`
+      else if (dialogProject.end_date && d.due_date > dialogProject.end_date.split('T')[0])
+        errs.due_date = `Cannot be after the project deadline (${new Date(dialogProject.end_date).toLocaleDateString()})`
+    }
     if (!d.assigned_to?.trim()) errs.assigned_to = 'Assignee is required'
+    else if (dialogProject && projectTeam.length > 0 &&
+             !projectTeam.some(pp => pp.name === d.assigned_to))
+      errs.assigned_to = 'Assignee must be a member of this project team'
     if (d.completion_percentage !== '' && (Number(d.completion_percentage) < 0 || Number(d.completion_percentage) > 100))
       errs.completion_percentage = 'Must be between 0 and 100'
     return errs
@@ -177,6 +201,10 @@ export default function Deliverables() {
           </Button>
         )}
       </Box>
+
+      {user?.role === 'admin' && (
+        <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>{ADMIN_READONLY_NOTE}</Alert>
+      )}
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
@@ -292,7 +320,10 @@ export default function Deliverables() {
               <FormControl fullWidth error={!!showErr('project_id')}>
                 <InputLabel>Project *</InputLabel>
                 <Select label="Project *" value={dialog.data.project_id} onChange={f('project_id')}>
-                  {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                  {assignableProjects.length === 0 && (
+                    <MenuItem disabled value="">You do not manage any projects</MenuItem>
+                  )}
+                  {assignableProjects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                 </Select>
               </FormControl>
             </Grid>
@@ -309,14 +340,26 @@ export default function Deliverables() {
             </Grid>
             {!dialog.limited && (<>
             <Grid item xs={6}>
-              <TextField fullWidth type="date" label="Due date *" value={dialog.data.due_date} onChange={f('due_date')} InputLabelProps={{ shrink: true }}
-                error={!!showErr('due_date')} helperText={showErr('due_date') || ''} />
+              <TextField fullWidth type="date" label="Due date *" value={dialog.data.due_date} onChange={f('due_date')}
+                InputLabelProps={{ shrink: true }}
+                inputProps={{
+                  min: dialogProject?.start_date ? dialogProject.start_date.split('T')[0] : undefined,
+                  max: dialogProject?.end_date ? dialogProject.end_date.split('T')[0] : undefined,
+                }}
+                error={!!showErr('due_date')}
+                helperText={showErr('due_date') ||
+                  (dialogProject
+                    ? `Must fall within the project window`
+                    : 'Select a project to set the allowed range')} />
             </Grid>
             <Grid item xs={6}>
               <TextField fullWidth select label="Assigned to *" value={dialog.data.assigned_to} onChange={f('assigned_to')}
                 error={!!showErr('assigned_to')} helperText={showErr('assigned_to') || ''}>
-                {people.length === 0 && <MenuItem disabled value="">No people found</MenuItem>}
-                {people.map(pp => (
+                {!dialogProject && <MenuItem disabled value="">Select a project first</MenuItem>}
+                {dialogProject && projectTeam.length === 0 && (
+                  <MenuItem disabled value="">No one is assigned to this project team yet</MenuItem>
+                )}
+                {projectTeam.map(pp => (
                   <MenuItem key={pp.id} value={pp.name}>
                     {pp.name} · {pp.title || pp.role}
                   </MenuItem>

@@ -10,6 +10,7 @@ import Deliverables from './pages/Deliverables'
 import Resources from './pages/Resources'
 import Budget from './pages/Budget'
 import Profile from './pages/Profile'
+import Activity from './pages/Activity'
 
 const theme = createTheme({
   palette: {
@@ -71,6 +72,7 @@ function AppRoutes() {
         <Route path="resources"  element={<Resources />} />
         <Route path="budget"     element={<Budget />} />
         <Route path="profile"    element={<Profile />} />
+        <Route path="activity"   element={<Activity />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

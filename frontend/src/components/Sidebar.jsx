@@ -15,6 +15,7 @@ import AssignmentIcon from '@mui/icons-material/Assignment'
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt'
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'
 import PersonIcon from '@mui/icons-material/Person'
+import HistoryIcon from '@mui/icons-material/History'
 import LogoutIcon from '@mui/icons-material/Logout'
 
 import { useAuth } from '../context/AuthContext'
@@ -26,6 +27,7 @@ const NAV = [
   { to: '/resources',    label: 'Resources',    Icon: PeopleAltIcon             },
   { to: '/budget',       label: 'Budget',       Icon: AccountBalanceWalletIcon  },
   { to: '/profile',      label: 'My Profile',   Icon: PersonIcon                },
+  { to: '/activity',     label: 'Activity Log', Icon: HistoryIcon, roles: ['admin', 'manager'] },
 ]
 
 const SIDEBAR_BG  = '#0F172A'
@@ -64,7 +66,7 @@ export default function Sidebar({ onClose }) {
 
       {/* Nav links */}
       <List sx={{ flex: 1, px: 1.5, py: 1.5 }}>
-        {NAV.map(({ to, label, Icon }) => (
+        {NAV.filter(item => !item.roles || item.roles.includes(user?.role)).map(({ to, label, Icon }) => (
           <NavLink
             key={to}
             to={to}

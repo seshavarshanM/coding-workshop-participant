@@ -21,6 +21,9 @@ import datetime
 import bcrypt
 import jwt
 from postgres_service import execute_query
+from auth import require_auth, require_role, deny_admin_business_action, \
+                 AuthError, handle_auth_error
+import audit
 
 HEADERS = {
     'Content-Type': 'application/json',
@@ -113,15 +116,15 @@ def init_db():
 
 
 def handler(event, context):
+    method = get_method(event)
+    if method == 'OPTIONS':
+        return respond(200, {})
+
     try:
         init_db()
-        method = get_method(event)
         parts = path_parts(event)
         qp = event.get('queryStringParameters') or {}
         body = json.loads(event['body']) if event.get('body') else {}
-
-        if method == 'OPTIONS':
-            return respond(200, {})
 
         # ── POST /api/people/login ────────────────────────────────────────
         if method == 'POST' and parts and parts[0] == 'login':
@@ -145,7 +148,21 @@ def handler(event, context):
         if method == 'POST' and parts and parts[0] == 'seed':
             return respond(200, seed_demo_data())
 
-        person_id = parts[0] if parts and parts[0] not in ('login', 'seed') else None
+        # Everything past this point requires a valid session.
+        user = require_auth(event)
+
+        # ── GET /api/people/audit — activity trail ────────────────────────
+        # Admins see everything; managers see their own actions.
+        if method == 'GET' and parts and parts[0] == 'audit':
+            require_role(user, 'admin', 'manager')
+            actor = None if user['role'] == 'admin' else user['name']
+            entries = audit.list_entries(
+                limit=int(qp.get('limit') or 200),
+                entity_type=qp.get('entity_type'),
+                actor_name=qp.get('actor') or actor,
+            )
+            return respond(200, entries)
+        person_id = parts[0] if parts and parts[0] not in ('login', 'seed', 'audit') else None
 
         # ── GET ───────────────────────────────────────────────────────────
         if method == 'GET':
@@ -173,10 +190,14 @@ def handler(event, context):
             )
             return respond(200, rows)
 
-        # ── POST create ───────────────────────────────────────────────────
+        # ── POST create — managers hire; admins may onboard accounts ──────
         if method == 'POST':
+            require_role(user, 'manager', 'admin')
             if not body.get('email') or not body.get('name'):
                 return respond(400, {'message': 'Name and email are required'})
+            # Only admins may mint another admin.
+            if body.get('role') == 'admin' and user['role'] != 'admin':
+                return respond(403, {'message': 'Only an administrator can create an admin account'})
             password = body.get('password') or 'Welcome@123'
             emp_id = body.get('employee_id') or next_employee_id()
             rows = execute_query(f"""
@@ -201,10 +222,19 @@ def handler(event, context):
                 body.get('bio', ''),
                 body.get('joined_date') or None,
             ))
-            return respond(201, rows[0] if rows else {})
+            created = rows[0] if rows else {}
+            audit.record(user, 'hire', 'person', created.get('id'),
+                         f"{created.get('name','')} ({created.get('employee_id','')})", '',
+                         f"Onboarded as {created.get('role','member')}")
+            return respond(201, created)
 
-        # ── PUT update ────────────────────────────────────────────────────
+        # ── PUT update — self, or manager/admin ───────────────────────────
         if method == 'PUT' and person_id:
+            if str(user['id']) != str(person_id) and user['role'] not in ('manager', 'admin'):
+                raise AuthError(403, 'You can only edit your own profile')
+            # Role changes are an administrator action.
+            if 'role' in body and user['role'] != 'admin':
+                return respond(403, {'message': 'Only an administrator can change a role'})
             fields = ['name', 'email', 'role', 'title', 'department', 'capacity_hours',
                       'allocated_hours', 'projects', 'phone', 'location', 'bio', 'joined_date']
             sets, params = [], []
@@ -229,13 +259,21 @@ def handler(event, context):
             )
             return respond(200, rows[0] if rows else {})
 
-        # ── DELETE ────────────────────────────────────────────────────────
+        # ── DELETE — administrator only (account administration) ──────────
         if method == 'DELETE' and person_id:
+            require_role(user, 'admin')
+            existing = execute_query("SELECT name, employee_id FROM people WHERE id = %s", (person_id,))
             execute_query("DELETE FROM people WHERE id = %s", (person_id,))
+            if existing:
+                audit.record(user, 'delete', 'person', person_id,
+                             f"{existing[0]['name']} ({existing[0]['employee_id']})", '',
+                             'Account removed by administrator')
             return respond(200, {'message': 'Person removed'})
 
         return respond(405, {'message': 'Method not allowed'})
 
+    except AuthError as e:
+        return handle_auth_error(e)
     except Exception as e:
         return respond(500, {'message': str(e)})
 

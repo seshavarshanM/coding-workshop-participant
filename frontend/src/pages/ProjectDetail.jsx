@@ -34,7 +34,7 @@ import { deliverableService } from '../services/deliverableService'
 import { budgetService } from '../services/budgetService'
 import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
-import { can, canManageProjectTeam } from '../utils/permissions'
+import { can, canManageProjectTeam, canEditProject } from '../utils/permissions'
 import StatusChip from '../components/StatusChip'
 
 // ── Team-membership helpers (stored in resource.projects CSV as "Name (Xh)") ──
@@ -213,7 +213,7 @@ export default function ProjectDetail() {
                 {project.description || 'No description provided.'}
               </Typography>
             </Box>
-            {can(user, 'project:edit') && (user.role === 'admin' || project.manager === user.name) && (
+            {canEditProject(user, project) && (
               <Button variant="outlined" onClick={() => navigate('/projects')}
                 sx={{ textTransform: 'none', borderRadius: 2 }}>
                 Edit Project
