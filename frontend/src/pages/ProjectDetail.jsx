@@ -36,6 +36,8 @@ import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
 import { can, canManageProjectTeam, canEditProject } from '../utils/permissions'
 import StatusChip from '../components/StatusChip'
+import DependencyChain from '../components/DependencyChain'
+import { blockedCount } from '../utils/dependencies'
 
 // ── Team-membership helpers (stored in resource.projects CSV as "Name (Xh)") ──
 const teamEntry = (projName, hours) => `${projName} (${hours}h)`
@@ -310,6 +312,24 @@ export default function ProjectDetail() {
             ))}
           </Box>
         )}
+      </Paper>
+
+      {/* ── Delivery sequence: how the work depends on itself ── */}
+      <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', mb: 2 }}>
+        <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Box>
+            <Typography fontWeight={700}>Delivery Sequence</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Which deliverable is holding up the ones after it
+            </Typography>
+          </Box>
+          {blockedCount(deliverables) > 0 && (
+            <Chip label={`${blockedCount(deliverables)} blocked`} size="small"
+              sx={{ fontWeight: 700, fontSize: '0.7rem', bgcolor: '#FEE2E2', color: '#991B1B' }} />
+          )}
+        </Box>
+        <Divider />
+        <DependencyChain deliverables={deliverables} />
       </Paper>
 
       {/* ── Deliverables ── */}

@@ -25,12 +25,16 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Skeleton from '@mui/material/Skeleton'
 import Grid from '@mui/material/Grid'
 import Tooltip from '@mui/material/Tooltip'
+import Chip from '@mui/material/Chip'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { deliverableService } from '../services/deliverableService'
 import { useAuth } from '../context/AuthContext'
 import { can, canUpdateProgress, canEditDeliverable, canDeleteDeliverable, ADMIN_READONLY_NOTE } from '../utils/permissions'
+import { isBlocked, blockReason, dependencyOf, validDependencyOptions, blockedCount, canProgress, completionBlockReason } from '../utils/dependencies'
+import BlockIcon from '@mui/icons-material/Block'
+import LinkIcon from '@mui/icons-material/Link'
 import { projectService } from '../services/projectService'
 import { peopleService } from '../services/peopleService'
 import StatusChip from '../components/StatusChip'
@@ -66,6 +70,10 @@ export default function Deliverables() {
   )
   // The project selected in the dialog (used for team + date constraints).
   const dialogProject = projects.find(p => p.id === dialog.data.project_id)
+  // Valid predecessors: same project, not itself, and no circular chains.
+  const dependencyChoices = validDependencyOptions(
+    { ...dialog.data, project_id: dialog.data.project_id }, items
+  )
   // Only people actually allocated to that project may be assigned work on it.
   const projectTeam = dialogProject
     ? people.filter(pp => {
@@ -115,6 +123,11 @@ export default function Deliverables() {
       errs.assigned_to = 'Assignee must be a member of this project team'
     if (d.completion_percentage !== '' && (Number(d.completion_percentage) < 0 || Number(d.completion_percentage) > 100))
       errs.completion_percentage = 'Must be between 0 and 100'
+    // Finish-to-start: a dependent cannot record progress until its
+    // predecessor is complete.
+    if (!canProgress(d, items) && (Number(d.completion_percentage || 0) > 0 ||
+        (d.status !== 'pending' && d.status !== 'blocked')))
+      errs.status = completionBlockReason(d, items)
     return errs
   }
   const errors = validate(dialog.data)
@@ -168,6 +181,12 @@ export default function Deliverables() {
     const status = e.target.value
     setTouched(t => ({ ...t, status: true }))
     setDialog(d => {
+      // Finish-to-start: no progress at all until the predecessor is done.
+      if (!canProgress(d.data, items) && status !== 'pending' && status !== 'blocked') {
+        setSnack({ open: true, sev: 'warning',
+          msg: completionBlockReason(d.data, items) })
+        return d
+      }
       let pct = Number(d.data.completion_percentage) || 0
       if (status === 'completed') pct = 100
       else if (status === 'pending') pct = 0
@@ -176,9 +195,14 @@ export default function Deliverables() {
     })
   }
   const setCompletion = (e) => {
-    const pct = e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value)))
+    let pct = e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value)))
     setTouched(t => ({ ...t, completion_percentage: true }))
     setDialog(d => {
+      if (pct > 0 && !canProgress(d.data, items)) {
+        setSnack({ open: true, sev: 'warning',
+          msg: completionBlockReason(d.data, items) })
+        pct = 0    // work has not legitimately started yet
+      }
       let status = d.data.status
       if (pct === 100) status = 'completed'
       else if (pct === 0) status = 'pending'
@@ -192,7 +216,13 @@ export default function Deliverables() {
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Box>
           <Typography variant="h5" fontWeight={700}>Deliverables</Typography>
-          <Typography variant="body2" color="text.secondary">{items.length} total</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+            <Typography variant="body2" color="text.secondary">{items.length} total</Typography>
+            {blockedCount(items) > 0 && (
+              <Chip icon={<BlockIcon sx={{ fontSize: 14 }} />} label={`${blockedCount(items)} blocked by dependencies`}
+                size="small" sx={{ fontWeight: 700, fontSize: '0.68rem', bgcolor: '#FEE2E2', color: '#991B1B' }} />
+            )}
+          </Box>
         </Box>
         {can(user, 'deliverable:create') && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
@@ -232,6 +262,7 @@ export default function Deliverables() {
               <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.78rem', bgcolor: '#F8FAFC' } }}>
                 <TableCell>Deliverable</TableCell>
                 <TableCell>Project</TableCell>
+                <TableCell>Depends On</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Assigned To</TableCell>
                 <TableCell>Due Date</TableCell>
@@ -242,12 +273,12 @@ export default function Deliverables() {
             <TableBody>
               {loading
                 ? Array.from({ length: 4 }).map((_, i) => (
-                    <TableRow key={i}>{Array.from({ length: 7 }).map((_, j) => (
+                    <TableRow key={i}>{Array.from({ length: 8 }).map((_, j) => (
                       <TableCell key={j}><Skeleton variant="text" /></TableCell>
                     ))}</TableRow>
                   ))
                 : items.length === 0
-                ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                ? <TableRow><TableCell colSpan={8} align="center" sx={{ py: 5, color: 'text.secondary' }}>
                     No deliverables found.
                   </TableCell></TableRow>
                 : items.map(d => (
@@ -257,7 +288,30 @@ export default function Deliverables() {
                         <Typography variant="caption" color="text.secondary">{d.description}</Typography>
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>{d.project_name || '—'}</TableCell>
-                      <TableCell><StatusChip value={d.status} /></TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem' }}>
+                        {(() => {
+                          const dep = dependencyOf(d, items)
+                          if (!dep) return <Typography variant="caption" color="text.secondary">—</Typography>
+                          return (
+                            <Tooltip title={`${dep.name} — ${dep.completion_percentage || 0}% complete`}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <LinkIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+                                <Typography variant="caption" noWrap sx={{ maxWidth: 130 }}>{dep.name}</Typography>
+                              </Box>
+                            </Tooltip>
+                          )
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <StatusChip value={d.status} />
+                          {isBlocked(d, items) && (
+                            <Tooltip title={blockReason(d, items)}>
+                              <BlockIcon sx={{ fontSize: 15, color: '#DC2626' }} />
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </TableCell>
                       <TableCell sx={{ fontSize: '0.85rem' }}>{d.assigned_to || '—'}</TableCell>
                       <TableCell sx={{ fontSize: '0.82rem', color: 'text.secondary' }}>
                         {d.due_date ? new Date(d.due_date).toLocaleDateString() : '—'}
@@ -331,13 +385,41 @@ export default function Deliverables() {
             <Grid item xs={6}>
               <FormControl fullWidth>
                 <InputLabel>Status</InputLabel>
-                <Select label="Status" value={dialog.data.status} onChange={setStatus}>
+                <Select label="Status" value={dialog.data.status} onChange={setStatus}
+                  disabled={!canProgress(dialog.data, items)}>
                   {['pending','in_progress','completed','blocked'].map(s => (
                     <MenuItem key={s} value={s}>{s.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase())}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
             </Grid>
+            {!dialog.limited && (
+            <Grid item xs={12}>
+              <TextField select fullWidth label="Depends on (optional)"
+                value={dialog.data.depends_on || ''}
+                onChange={f('depends_on')}
+                disabled={!dialogProject}
+                helperText={!dialogProject
+                  ? 'Select a project first'
+                  : dependencyChoices.length === 0
+                  ? 'No other deliverables in this project yet'
+                  : 'This work cannot finish until the selected deliverable is complete'}>
+                <MenuItem value="">No dependency</MenuItem>
+                {dependencyChoices.map(dc => (
+                  <MenuItem key={dc.id} value={dc.id}>
+                    {dc.name} · {dc.completion_percentage || 0}%
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+            )}
+            {!canProgress(dialog.data, items) && (
+              <Grid item xs={12}>
+                <Alert severity="warning" sx={{ fontSize: '0.8rem' }}>
+                  {completionBlockReason(dialog.data, items)}
+                </Alert>
+              </Grid>
+            )}
             {!dialog.limited && (<>
             <Grid item xs={6}>
               <TextField fullWidth type="date" label="Due date *" value={dialog.data.due_date} onChange={f('due_date')}
@@ -369,8 +451,12 @@ export default function Deliverables() {
             </>)}
             <Grid item xs={6}>
               <TextField fullWidth type="number" label="Completion (%)" value={dialog.data.completion_percentage} onChange={setCompletion} inputProps={{ min: 0, max: 100 }}
+                disabled={!canProgress(dialog.data, items)}
                 error={!!showErr('completion_percentage')}
-                helperText={showErr('completion_percentage') || 'Linked to status: 100% = Completed'} />
+                helperText={showErr('completion_percentage') ||
+                  (!canProgress(dialog.data, items)
+                    ? 'Locked until the dependency is complete'
+                    : 'Linked to status: 100% = Completed')} />
             </Grid>
           </Grid>
         </DialogContent>

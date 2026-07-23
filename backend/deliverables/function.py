@@ -74,6 +74,27 @@ def sync_project_completion(project_id):
             (avg, project_id))
 
 
+def dependency_complete(depends_on):
+    """
+    Finish-to-start: a deliverable may not record progress until the work it
+    depends on has finished. Returns (ok, message).
+    """
+    if not depends_on:
+        return True, ''
+    rows = execute_query(
+        "SELECT name, status, completion_percentage FROM deliverables WHERE id = %s",
+        (depends_on,))
+    if not rows:
+        return True, ''          # dangling reference — do not block on it
+    dep = rows[0]
+    if dep['status'] == 'completed':
+        return True, ''
+    return False, (
+        f"Cannot start this deliverable: \"{dep['name']}\" must be completed "
+        f"first (currently {dep['completion_percentage'] or 0}%)"
+    )
+
+
 def normalize_status(status, pct):
     """Status and completion must never contradict each other."""
     if pct is None:
@@ -127,6 +148,14 @@ def handler(event, context):
             project = fetch_project(body.get('project_id'))
             require_project_owner(user, project, 'add deliverables to this project')
 
+            wants_progress = (
+                int(body.get('completion_percentage') or 0) > 0
+                or body.get('status') in ('in_progress', 'completed')
+            )
+            if wants_progress:
+                ok, msg = dependency_complete(body.get('depends_on'))
+                if not ok:
+                    return respond(400, {'message': msg})
             status, pct = normalize_status(
                 body.get('status', 'pending'), body.get('completion_percentage', 0))
             rows = execute_query("""
@@ -178,6 +207,20 @@ def handler(event, context):
             fields = ['project_name', 'name', 'description', 'status', 'due_date',
                       'assigned_to', 'depends_on', 'completion_percentage']
             payload = dict(body)
+
+            # Check the dependency against what the caller ASKED for, before any
+            # normalisation rewrites it — otherwise an invalid request is
+            # silently downgraded instead of being rejected.
+            wants_progress = (
+                int(body.get('completion_percentage') or 0) > 0
+                or body.get('status') in ('in_progress', 'completed')
+            )
+            if wants_progress:
+                depends_on = body.get('depends_on', item.get('depends_on'))
+                ok, msg = dependency_complete(depends_on)
+                if not ok:
+                    return respond(400, {'message': msg})
+
             if 'status' in payload or 'completion_percentage' in payload:
                 s, p = normalize_status(
                     payload.get('status', item.get('status')),
@@ -219,6 +262,28 @@ def handler(event, context):
                          item.get('name', ''), item.get('project_name', ''),
                          f"Removed by {user['name']}")
             return respond(200, {'message': 'Deliverable deleted', 'deleted_by': user['name']})
+
+        # ── POST /api/deliverables/repair — correct impossible states ─────
+        # Rows created before the finish-to-start rule existed may record
+        # progress while their predecessor is unfinished. Reset those to
+        # 'blocked' at 0% so the data reflects what is actually true.
+        if method == 'POST' and get_path(event).rstrip('/').endswith('/repair'):
+            require_role(user, 'admin', 'manager')
+            rows = execute_query("SELECT * FROM deliverables WHERE depends_on IS NOT NULL")
+            fixed = []
+            for r in rows:
+                ok, _ = dependency_complete(r['depends_on'])
+                if not ok and (int(r['completion_percentage'] or 0) > 0
+                               or r['status'] in ('in_progress', 'completed')):
+                    execute_query(
+                        "UPDATE deliverables SET status='blocked', completion_percentage=0,"
+                        " updated_at=CURRENT_TIMESTAMP WHERE id = %s", (r['id'],))
+                    fixed.append(r['name'])
+            for pid in {r['project_id'] for r in rows if r.get('project_id')}:
+                sync_project_completion(pid)
+            audit.record(user, 'update', 'deliverable', None, 'Dependency repair', '',
+                         f"Reset {len(fixed)} deliverable(s) blocked by unfinished dependencies")
+            return respond(200, {'repaired': fixed, 'count': len(fixed)})
 
         return respond(405, {'message': 'Method not allowed'})
 
