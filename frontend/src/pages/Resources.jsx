@@ -19,6 +19,8 @@ import Skeleton from '@mui/material/Skeleton'
 import Tooltip from '@mui/material/Tooltip'
 import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
+import Tabs from '@mui/material/Tabs'
+import Tab from '@mui/material/Tab'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -26,8 +28,12 @@ import SearchIcon from '@mui/icons-material/Search'
 import EmailIcon from '@mui/icons-material/Email'
 import BadgeIcon from '@mui/icons-material/Badge'
 import { peopleService } from '../services/peopleService'
+import { palette, shadow, statusToken } from '../theme/tokens'
 import { useAuth } from '../context/AuthContext'
 import { can, canHire } from '../utils/permissions'
+import PersonDetailDialog from '../components/PersonDetailDialog'
+import { deliverableService } from '../services/deliverableService'
+import { projectService } from '../services/projectService'
 
 const EMPTY = {
   name: '', email: '', password: '', role: 'member', title: '', department: '',
@@ -53,10 +59,14 @@ export default function Resources() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [view, setView] = useState('all')
   const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY })
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState({})
+  const [viewing, setViewing] = useState(null)
+  const [deliverables, setDeliverables] = useState([])
+  const [projects, setProjects] = useState([])
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
 
   const load = useCallback(async () => {
@@ -73,6 +83,12 @@ export default function Resources() {
   }, [search])
 
   useEffect(() => { load() }, [load])
+
+  // Loaded once so a person's card can show what they are actually working on.
+  useEffect(() => {
+    deliverableService.getAll().then(setDeliverables).catch(() => {})
+    projectService.getAll().then(setProjects).catch(() => {})
+  }, [])
 
   const openCreate = () => { setTouched({}); setDialog({ open: true, mode: 'create', data: EMPTY }) }
   const openEdit = (r) => { setTouched({}); setDialog({ open: true, mode: 'edit', data: { ...r, password: '' } }) }
@@ -133,11 +149,20 @@ export default function Resources() {
     }
   }
 
+  const utilisation = r =>
+    Number(r.capacity_hours) > 0
+      ? (Number(r.allocated_hours) / Number(r.capacity_hours)) * 100
+      : 0
+
   const overAllocated = items.filter(r => Number(r.allocated_hours) > Number(r.capacity_hours))
-  const available = items.filter(r => {
-    const pct = r.capacity_hours > 0 ? (Number(r.allocated_hours) / Number(r.capacity_hours)) * 100 : 0
-    return pct < 50
-  })
+  const available = items.filter(r => utilisation(r) < 50)
+
+  // "Which team members are over-allocated?" should be one click, not a scan.
+  const shown = view === 'over'
+    ? [...overAllocated].sort((a, b) => utilisation(b) - utilisation(a))
+    : view === 'available'
+    ? [...available].sort((a, b) => utilisation(a) - utilisation(b))
+    : items
 
   return (
     <Box>
@@ -177,29 +202,47 @@ export default function Resources() {
       />
 
       {/* Cards */}
-      <Grid container spacing={2.5}>
+      <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ mb: 2.5 }}>
+        <Tab value="all" label={`Everyone (${items.length})`} />
+        <Tab value="over" label={`Over-allocated (${overAllocated.length})`} />
+        <Tab value="available" label={`Available (${available.length})`} />
+      </Tabs>
+
+      {/* CSS Grid rather than MUI's Grid: the column count is stated outright,
+          so card width never depends on how flex-basis and max-width interact. */}
+      <Box sx={{
+        display: 'grid',
+        gap: 2.5,
+        gridTemplateColumns: {
+          xs: '1fr',
+          sm: 'repeat(2, minmax(0, 1fr))',
+          lg: 'repeat(3, minmax(0, 1fr))',
+        },
+      }}>
         {loading
           ? Array.from({ length: 6 }).map((_, i) => (
-              <Grid item xs={12} sm={6} md={4} xl={3} key={i}>
-                <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                  <Skeleton variant="circular" width={48} height={48} />
-                  <Skeleton variant="text" width="60%" sx={{ mt: 1.5 }} />
-                  <Skeleton variant="text" width="85%" />
-                  <Skeleton variant="rectangular" height={6} sx={{ mt: 2, borderRadius: 3 }} />
-                </Paper>
-              </Grid>
+              <Paper key={i} sx={{ p: 2.5 }}>
+                <Skeleton variant="circular" width={48} height={48} />
+                <Skeleton variant="text" width="60%" sx={{ mt: 1.5 }} />
+                <Skeleton variant="text" width="85%" />
+                <Skeleton variant="rectangular" height={6} sx={{ mt: 2, borderRadius: 3 }} />
+              </Paper>
             ))
-          : items.length === 0
+          : shown.length === 0
           ? (
-              <Grid item xs={12}>
-                <Paper elevation={0} sx={{ p: 6, borderRadius: 3, border: '1px dashed', borderColor: 'divider', textAlign: 'center' }}>
+              <Box sx={{ gridColumn: '1 / -1' }}>
+                <Paper sx={{ p: 6, borderStyle: 'dashed', textAlign: 'center' }}>
                   <Typography color="text.secondary">
-                    No team members found{search ? ' for that search' : ''}.
+                    {view === 'over'
+                      ? 'Nobody is over capacity right now.'
+                      : view === 'available'
+                      ? 'Everyone is more than half committed.'
+                      : `No team members found${search ? ' for that search' : ''}.`}
                   </Typography>
                 </Paper>
-              </Grid>
+              </Box>
             )
-          : items.map(r => {
+          : shown.map(r => {
               const cap = Number(r.capacity_hours) || 0
               const alloc = Number(r.allocated_hours) || 0
               const pct = cap > 0 ? Math.round((alloc / cap) * 100) : 0
@@ -209,13 +252,20 @@ export default function Resources() {
               const projectList = (r.projects || '').split(',').map(s => s.trim()).filter(Boolean)
 
               return (
-                <Grid item xs={12} sm={6} md={4} xl={3} key={r.id}>
-                  <Paper elevation={0} sx={{
-                    p: 3, borderRadius: 3, height: '100%',
-                    display: 'flex', flexDirection: 'column',
-                    border: '1px solid', borderColor: isOver ? '#FCA5A5' : 'divider',
-                    '&:hover': { boxShadow: '0 4px 16px rgba(15,23,42,0.06)' },
-                  }}>
+                  <Paper
+                    key={r.id}
+                    onClick={() => setViewing(r)}
+                    sx={{
+                      p: 2.5, height: '100%', minWidth: 0, cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column',
+                      borderColor: isOver ? statusToken('blocked').dot : 'divider',
+                      transition: 'border-color .15s ease, box-shadow .15s ease',
+                      '&:hover': {
+                        borderColor: isOver ? statusToken('blocked').dot : palette.borderStrong,
+                        boxShadow: shadow.sm,
+                      },
+                    }}
+                  >
                     {/* Top row: avatar + name + actions */}
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, mb: 2 }}>
                       <Avatar sx={{ bgcolor: avatarColor(r.name), width: 48, height: 48, fontWeight: 700, fontSize: '1rem' }}>
@@ -230,7 +280,7 @@ export default function Resources() {
                           {r.title || 'No title set'}
                         </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                      <Box sx={{ display: 'flex', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                         {can(user, 'person:edit') && (
                           <Tooltip title="Edit">
                             <IconButton size="small" onClick={() => openEdit(r)}>
@@ -295,9 +345,11 @@ export default function Resources() {
 
                     {/* Allocation — pinned to bottom */}
                     <Box sx={{ mt: 'auto', pt: 1 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.75 }}>
-                        <Typography variant="caption" color="text.secondary">Allocation</Typography>
-                        <Typography variant="caption" fontWeight={700}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between',
+                        alignItems: 'baseline', gap: 1, mb: 0.75 }}>
+                        <Typography variant="caption" color="text.secondary"
+                          sx={{ whiteSpace: 'nowrap' }}>Allocation</Typography>
+                        <Typography variant="caption" fontWeight={700} noWrap
                           color={isOver ? 'error.main' : 'text.primary'}>
                           {alloc}h / {cap}h · {pct}%
                         </Typography>
@@ -312,10 +364,16 @@ export default function Resources() {
                         }} />
                     </Box>
                   </Paper>
-                </Grid>
               )
             })}
-      </Grid>
+      </Box>
+
+      <PersonDetailDialog
+        person={viewing}
+        deliverables={deliverables}
+        projects={projects}
+        onClose={() => setViewing(null)}
+      />
 
       {/* Create / edit dialog */}
       <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>

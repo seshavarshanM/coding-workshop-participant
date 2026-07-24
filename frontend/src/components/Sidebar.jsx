@@ -92,7 +92,7 @@ export default function Sidebar({ onClose }) {
                 {section}
               </Typography>
               <List disablePadding>
-                {visible.map(({ to, label, Icon }) => (
+                {visible.map(({ to, label, Icon: NavIcon }) => (
                   <NavLink key={to} to={to} end={to === '/'} onClick={onClose}
                     style={{ textDecoration: 'none' }}>
                     {({ isActive }) => (
@@ -103,7 +103,7 @@ export default function Sidebar({ onClose }) {
                         '&:hover': { bgcolor: isActive ? palette.navActiveBg : 'rgba(255,255,255,0.06)' },
                       }}>
                         <ListItemIcon sx={{ minWidth: 30 }}>
-                          <Icon sx={{ fontSize: 18, color: isActive ? palette.navTextActive : palette.navText }} />
+                          <NavIcon sx={{ fontSize: 18, color: isActive ? palette.navTextActive : palette.navText }} />
                         </ListItemIcon>
                         <ListItemText primary={label} primaryTypographyProps={{
                           fontSize: '0.8125rem',

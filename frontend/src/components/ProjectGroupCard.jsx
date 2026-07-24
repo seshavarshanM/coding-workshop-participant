@@ -7,6 +7,8 @@ import IconButton from '@mui/material/IconButton'
 import Divider from '@mui/material/Divider'
 import LinearProgress from '@mui/material/LinearProgress'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMoreRounded'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 import { palette, shadow } from '../theme/tokens'
 
 /**
@@ -19,6 +21,11 @@ export default function ProjectGroupCard({
   title, subtitle, stats = [], progress, accent, defaultOpen = false, children, count,
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  // On smaller screens the card face keeps only what identifies the project;
+  // the figures are still available once it is opened.
+  const theme = useTheme()
+  const hideStats = useMediaQuery(theme.breakpoints.down('sm'))
+  const hideProgress = useMediaQuery(theme.breakpoints.down('lg'))
 
   return (
     <Paper sx={{
@@ -62,7 +69,8 @@ export default function ProjectGroupCard({
         </Box>
 
         {/* Summary figures — readable without opening the card */}
-        <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 3, flexShrink: 0 }}>
+        {!hideStats && (
+        <Box sx={{ display: 'flex', gap: 3, flexShrink: 0 }}>
           {stats.map(s => (
             <Box key={s.label} sx={{ textAlign: 'right', minWidth: 76 }}>
               <Typography sx={{
@@ -75,9 +83,10 @@ export default function ProjectGroupCard({
             </Box>
           ))}
         </Box>
+        )}
 
-        {progress !== undefined && (
-          <Box sx={{ width: 90, display: { xs: 'none', lg: 'block' }, flexShrink: 0 }}>
+        {progress !== undefined && !hideProgress && (
+          <Box sx={{ width: 90, flexShrink: 0 }}>
             <LinearProgress variant="determinate" value={Math.min(progress, 100)}
               sx={{ '& .MuiLinearProgress-bar': { bgcolor: accent || palette.ink } }} />
             <Typography variant="caption" sx={{ fontSize: '0.6875rem', display: 'block', textAlign: 'right', mt: 0.5 }}>

@@ -46,7 +46,7 @@ const TICKET_TONE = {
   resolved:    { fg: '#15633C', bg: '#E8F5EC' },
   closed:      { fg: '#4A4A52', bg: '#EFEEEA' },
 }
-const label = (list, v) => (list.find(([k]) => k === v) || [, v])[1]
+const label = (list, v) => (list.find(([k]) => k === v) || [null, v])[1]
 const initials = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 
 function when(ts) {
@@ -150,9 +150,11 @@ export default function Support() {
         description={isAdmin
           ? 'Problems reported by managers and team members. Triage, respond and resolve.'
           : 'Report a problem with the platform. An administrator will pick it up.'}
-        action={<Button variant="contained" startIcon={<AddIcon />} onClick={() => setNewOpen(true)}>
-          Report a problem
-        </Button>}
+        action={!isAdmin ? (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setNewOpen(true)}>
+            Report a problem
+          </Button>
+        ) : null}
       />
 
       {isAdmin && (
@@ -188,7 +190,9 @@ export default function Support() {
             {tab === 'open' ? 'No open tickets' : 'Nothing here'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {isAdmin ? 'The queue is clear.' : 'Report a problem and it will appear here.'}
+            {isAdmin
+              ? 'The queue is clear — nothing has been reported.'
+              : 'Report a problem and it will appear here.'}
           </Typography>
         </Paper>
       ) : shown.map(t => {

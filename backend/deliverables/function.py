@@ -24,11 +24,25 @@ def get_path(event):
     return event.get('path') or event.get('rawPath') or ''
 
 
+# Sub-resources and collection actions that appear in a path but are never an id.
+PATH_ACTIONS = {'updates', 'notifications', 'repair'}
+
+
 def get_id(event):
+    """
+    The deliverable id from the path.
+
+    Paths carry actions as well as ids — /deliverables/{id}/updates, or
+    /deliverables/notifications with no id at all — so taking the last segment
+    would return the action. Known actions are removed before reading the id.
+    """
     pp = event.get('pathParameters') or {}
     if pp.get('id'):
         return pp['id']
-    parts = [p for p in get_path(event).split('/') if p and p not in ('api', 'deliverables')]
+    parts = [
+        p for p in get_path(event).split('/')
+        if p and p not in ('api', 'deliverables') and p not in PATH_ACTIONS
+    ]
     return parts[-1] if parts else None
 
 
@@ -154,7 +168,47 @@ def handler(event, context):
 
         parts = [p for p in get_path(event).split('/') if p and p not in ('api', 'deliverables')]
         wants_updates = len(parts) >= 2 and parts[1] == 'updates'
-        target_id = parts[0] if parts else None
+        target_id = parts[0] if parts and parts[0] != 'notifications' else None
+
+        # ── GET /api/deliverables/notifications ───────────────────────
+        # What has happened that this person should know about.
+        #
+        # Derived from the progress timeline rather than written to a separate
+        # table: an update is already recorded once, and deriving means the two
+        # can never disagree.
+        #   member  -> remarks left on work assigned to them
+        #   manager -> progress reported on their projects by someone else
+        if method == 'GET' and get_path(event).rstrip('/').endswith('/notifications'):
+            init_updates_table()
+            name = user.get('name', '')
+            role = user.get('role', 'member')
+
+            if role == 'manager':
+                rows = execute_query("""
+                    SELECT u.*, d.name AS deliverable_name, d.project_name
+                    FROM progress_updates u
+                    JOIN deliverables d ON d.id = u.deliverable_id
+                    JOIN projects p ON p.id = d.project_id
+                    WHERE p.manager = %s AND u.author_name <> %s
+                    ORDER BY u.created_at DESC LIMIT 30
+                """, (name, name))
+            elif role == 'admin':
+                rows = execute_query("""
+                    SELECT u.*, d.name AS deliverable_name, d.project_name
+                    FROM progress_updates u
+                    JOIN deliverables d ON d.id = u.deliverable_id
+                    WHERE u.author_name <> %s
+                    ORDER BY u.created_at DESC LIMIT 30
+                """, (name,))
+            else:
+                rows = execute_query("""
+                    SELECT u.*, d.name AS deliverable_name, d.project_name
+                    FROM progress_updates u
+                    JOIN deliverables d ON d.id = u.deliverable_id
+                    WHERE d.assigned_to = %s AND u.author_name <> %s
+                    ORDER BY u.created_at DESC LIMIT 30
+                """, (name, name))
+            return respond(200, rows)
 
         # ── Timeline: GET /api/deliverables/{id}/updates ──────────────
         if method == 'GET' and wants_updates:
@@ -355,7 +409,7 @@ def handler(event, context):
             audit.record(user, 'delete', 'deliverable', item_id,
                          item.get('name', ''), item.get('project_name', ''),
                          f"Removed by {user['name']}")
-            return respond(200, {'message': 'Deliverable deleted', 'deleted_by': user['name']})
+            return respond(204)
 
         # ── POST /api/deliverables/repair — correct impossible states ─────
         # Rows created before the finish-to-start rule existed may record

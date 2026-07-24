@@ -18,7 +18,8 @@
 
 const MATRIX = {
   admin: new Set([
-    'project:delete',      // compliance removal
+    // Nothing about a project's lifecycle: creating, editing and retiring a
+    // project all belong to the manager who owns it.
     'person:create',       // account onboarding
     'person:edit',
     'person:delete',
@@ -27,7 +28,7 @@ const MATRIX = {
   ]),
 
   manager: new Set([
-    'project:create', 'project:edit',
+    'project:create', 'project:edit', 'project:archive',
     'deliverable:create', 'deliverable:edit', 'deliverable:delete',
     'deliverable:update-progress',
     'budget:propose', 'budget:edit', 'budget:delete',
@@ -63,8 +64,17 @@ export function canEditProject(user, project) {
   return can(user, 'project:edit') && ownsProject(user, project)
 }
 
-export function canDeleteProject(user) {
-  return can(user, 'project:delete')     // administrator only
+/**
+ * Retiring a project is part of running it, so it belongs to the manager who
+ * owns it — and to nobody else.
+ *
+ * The record is kept and remains attributable. Nothing in the application
+ * deletes a project permanently: a project that consumed budget and people is
+ * part of the organisation's history, and erasing it would lose exactly what
+ * the audit trail exists to preserve.
+ */
+export function canArchiveProject(user, project) {
+  return can(user, 'project:archive') && ownsProject(user, project)
 }
 
 export function canManageProjectTeam(user, project) {

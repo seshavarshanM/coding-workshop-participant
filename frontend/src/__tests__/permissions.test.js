@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  can, canEditProject, canDeleteProject, canManageProjectTeam,
+  can, canEditProject, canArchiveProject, canManageProjectTeam,
   canEditDeliverable, canDeleteDeliverable, canUpdateProgress,
   canProposeBudget, canEditBudgetEntry, canDeleteBudgetEntry,
   canHire, ownsProject,
@@ -24,6 +24,7 @@ describe('the interface only offers what the API will allow', () => {
   it('refuses everything when nobody is signed in', () => {
     expect(can(null, 'project:create')).toBe(false)
     expect(canEditProject(null, mine)).toBe(false)
+    expect(canArchiveProject(null, mine)).toBe(false)
     expect(canHire(null)).toBe(false)
   })
 })
@@ -39,13 +40,18 @@ describe('administrators oversee the system rather than run projects', () => {
     expect(canEditBudgetEntry(admin, budgetOnMine, projects)).toBe(false)
   })
 
+  it('has no part in a projects lifecycle at all', () => {
+    expect(can(admin, 'project:create')).toBe(false)
+    expect(canEditProject(admin, mine)).toBe(false)
+    expect(canArchiveProject(admin, mine)).toBe(false)
+  })
+
   it('cannot assign work', () => {
     expect(canEditDeliverable(admin, deliverableOnMine, projects)).toBe(false)
     expect(canManageProjectTeam(admin, mine)).toBe(false)
   })
 
   it('keeps the responsibilities that belong to an administrator', () => {
-    expect(canDeleteProject(admin)).toBe(true)   // compliance removal
     expect(canHire(admin)).toBe(true)            // account onboarding
     expect(can(admin, 'person:change-role')).toBe(true)
     expect(can(admin, 'audit:view')).toBe(true)
@@ -64,8 +70,11 @@ describe('managers act only on the projects they own', () => {
     expect(canProposeBudget(manager, theirs)).toBe(false)
   })
 
-  it('may not delete projects — that is an administrator action', () => {
-    expect(canDeleteProject(manager)).toBe(false)
+  it('may retire a project they own, and only their own', () => {
+    // The record is kept and attributed rather than erased — nothing in the
+    // application deletes a project permanently.
+    expect(canArchiveProject(manager, mine)).toBe(true)
+    expect(canArchiveProject(manager, theirs)).toBe(false)
   })
 
   it('may manage deliverables on their own project only', () => {

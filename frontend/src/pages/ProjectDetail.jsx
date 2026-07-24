@@ -24,18 +24,21 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import TextField from '@mui/material/TextField'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Snackbar from '@mui/material/Snackbar'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import DescriptionIcon from '@mui/icons-material/DescriptionRounded'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove'
+import EditIcon from '@mui/icons-material/EditRounded'
 import { projectService } from '../services/projectService'
 import { deliverableService } from '../services/deliverableService'
 import { budgetService } from '../services/budgetService'
 import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
-import { can, canManageProjectTeam, canEditProject } from '../utils/permissions'
+import { canManageProjectTeam, canEditProject } from '../utils/permissions'
 import StatusChip from '../components/StatusChip'
 import DependencyChain from '../components/DependencyChain'
 import { blockedCount } from '../utils/dependencies'
@@ -83,6 +86,8 @@ export default function ProjectDetail() {
   const [error, setError] = useState('')
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignForm, setAssignForm] = useState({ resource_id: '', hours: '' })
+  const [acknowledgeOver, setAcknowledgeOver] = useState(false)
+  const [editingMember, setEditingMember] = useState(null)
   const [saving, setSaving] = useState(false)
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' })
 
@@ -135,25 +140,52 @@ export default function ProjectDetail() {
     .sort((a, b) => remainingOf(b) - remainingOf(a))
 
   const selectedResource = resources.find(r => r.id === assignForm.resource_id)
-  const remaining = selectedResource ? remainingOf(selectedResource) : 0
+  // When editing, the hours already committed to this project are not
+  // competing with themselves — add them back before judging what is free.
+  const alreadyHere = selectedResource ? hoursFor(selectedResource, project.name) : 0
+  const remaining = selectedResource ? remainingOf(selectedResource) + alreadyHere : 0
   const hoursNum = Number(assignForm.hours)
+  // Over-allocating someone is sometimes a real decision — a sprint gets
+  // pulled forward, someone covers absence. Blocking it outright would make
+  // the situation invisible, so the system warns clearly and requires the
+  // manager to acknowledge it, then reports the result.
   const hoursError =
     assignForm.hours === '' ? '' :
-    hoursNum < 1 ? 'At least 1 hour' :
-    hoursNum > remaining ? `Exceeds ${selectedResource?.name}'s free capacity (${remaining}h left)` : ''
-  const assignValid = assignForm.resource_id && assignForm.hours !== '' && !hoursError
+    hoursNum < 1 ? 'At least 1 hour' : ''
+  const wouldOverAllocate = !!selectedResource && hoursNum > remaining
+  const overBy = wouldOverAllocate ? hoursNum - remaining : 0
+  const assignValid =
+    assignForm.resource_id && assignForm.hours !== '' && !hoursError &&
+    (!wouldOverAllocate || acknowledgeOver)
+
+  /** Change how many hours someone is committed to this project. */
+  const openEditHours = (r) => {
+    setEditingMember(r)
+    setAcknowledgeOver(false)
+    setAssignForm({ resource_id: r.id, hours: String(hoursFor(r, project.name)) })
+    setAssignOpen(true)
+  }
 
   const handleAssign = async () => {
     setSaving(true)
     try {
       const r = selectedResource
-      const newProjects = [...entriesOf(r), teamEntry(project.name, hoursNum)].join(', ')
+      const previous = hoursFor(r, project.name)      // 0 when newly assigned
+      const others = entriesOf(r).filter(
+        e => !(e === project.name || e.startsWith(`${project.name} (`)))
+      const newProjects = [...others, teamEntry(project.name, hoursNum)].join(', ')
       await peopleService.update(r.id, {
         projects: newProjects,
-        allocated_hours: Number(r.allocated_hours || 0) + hoursNum,
+        allocated_hours: Math.max(0, Number(r.allocated_hours || 0) - previous + hoursNum),
       })
-      setSnack({ open: true, msg: `${r.name} assigned (${hoursNum}h/week)`, sev: 'success' })
+      setSnack({
+        open: true, sev: 'success',
+        msg: previous
+          ? `${r.name} updated to ${hoursNum}h/week`
+          : `${r.name} assigned (${hoursNum}h/week)`,
+      })
       setAssignOpen(false)
+      setEditingMember(null)
       setAssignForm({ resource_id: '', hours: '' })
       load()
     } catch (e) {
@@ -278,7 +310,7 @@ export default function ProjectDetail() {
           <Typography fontWeight={700}>Team ({team.length})</Typography>
           {canManageTeam && (
             <Button size="small" variant="contained" startIcon={<PersonAddIcon />}
-              onClick={() => { setAssignForm({ resource_id: '', hours: '' }); setAssignOpen(true) }}
+              onClick={() => { setEditingMember(null); setAssignForm({ resource_id: '', hours: '' }); setAcknowledgeOver(false); setAssignOpen(true) }}
               sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 600 }}>
               Assign member
             </Button>
@@ -308,11 +340,18 @@ export default function ProjectDetail() {
                 <Chip size="small" label={`${hoursFor(r, project.name)}h/wk`}
                   sx={{ fontWeight: 700, fontSize: '0.7rem', bgcolor: '#DBEAFE', color: '#1565C0' }} />
                 {canManageTeam && (
-                  <Tooltip title="Remove from team">
-                    <IconButton size="small" color="error" onClick={() => handleUnassign(r)}>
-                      <PersonRemoveIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+                  <>
+                    <Tooltip title="Change hours">
+                      <IconButton size="small" onClick={() => openEditHours(r)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Remove from team">
+                      <IconButton size="small" color="error" onClick={() => handleUnassign(r)}>
+                        <PersonRemoveIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </>
                 )}
               </Paper>
             ))}
@@ -440,19 +479,25 @@ export default function ProjectDetail() {
 
       {/* ── Assign dialog: capacity-aware member picker ── */}
       <Dialog open={assignOpen} onClose={() => setAssignOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle fontWeight={700}>Assign Team Member</DialogTitle>
+        <DialogTitle>{editingMember ? `Change ${editingMember.name}\u2019s hours` : 'Assign team member'}</DialogTitle>
         <DialogContent dividers>
           <TextField select fullWidth label="Member (sorted by free capacity)"
             value={assignForm.resource_id}
-            onChange={e => setAssignForm(f => ({ ...f, resource_id: e.target.value }))}
+            disabled={!!editingMember}
+            onChange={e => { setAcknowledgeOver(false); setAssignForm(f => ({ ...f, resource_id: e.target.value })) }}
             sx={{ mb: 2, mt: 0.5 }}>
+            {editingMember && (
+              <MenuItem value={editingMember.id}>
+                {editingMember.name} · {editingMember.title || editingMember.role}
+              </MenuItem>
+            )}
             {available.length === 0 && <MenuItem disabled value="">Everyone is already on this team</MenuItem>}
             {available.map(r => {
               const rem = remainingOf(r)
               const util = r.capacity_hours > 0
                 ? Math.round((Number(r.allocated_hours) / Number(r.capacity_hours)) * 100) : 0
               return (
-                <MenuItem key={r.id} value={r.id} disabled={rem === 0}>
+                <MenuItem key={r.id} value={r.id}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', gap: 1 }}>
                     <span>{r.name} · {r.role || 'No role'}</span>
                     <Chip size="small"
@@ -469,15 +514,40 @@ export default function ProjectDetail() {
           </TextField>
           <TextField fullWidth type="number" label="Hours per week"
             value={assignForm.hours}
-            onChange={e => setAssignForm(f => ({ ...f, hours: e.target.value }))}
+            onChange={e => { setAcknowledgeOver(false); setAssignForm(f => ({ ...f, hours: e.target.value })) }}
             inputProps={{ min: 1 }}
             error={!!hoursError} helperText={hoursError || (selectedResource ? `${remaining}h remaining of ${selectedResource.capacity_hours}h capacity` : '')} />
+          {wouldOverAllocate && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                This will over-allocate {selectedResource.name}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 1.5 }}>
+                {selectedResource.name} has {remaining}h free of {selectedResource.capacity_hours}h.
+                Assigning {hoursNum}h puts them {overBy}h beyond capacity.
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={acknowledgeOver}
+                    onChange={e => setAcknowledgeOver(e.target.checked)}
+                  />
+                }
+                label={
+                  <Typography variant="body2">
+                    Assign anyway — I accept they will be over capacity
+                  </Typography>
+                }
+              />
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={() => setAssignOpen(false)} sx={{ textTransform: 'none' }}>Cancel</Button>
+          <Button onClick={() => { setAssignOpen(false); setEditingMember(null) }}>Cancel</Button>
           <Button variant="contained" onClick={handleAssign} disabled={saving || !assignValid}
             sx={{ textTransform: 'none', fontWeight: 600 }}>
-            {saving ? 'Assigning…' : 'Assign'}
+            {saving ? 'Saving…' : editingMember ? 'Update hours' : 'Assign'}
           </Button>
         </DialogActions>
       </Dialog>

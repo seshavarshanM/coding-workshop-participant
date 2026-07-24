@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
 import Avatar from '@mui/material/Avatar'
 import Chip from '@mui/material/Chip'
@@ -25,6 +26,7 @@ import { useAuth } from '../context/AuthContext'
 import { projectService } from '../services/projectService'
 import { deliverableService } from '../services/deliverableService'
 import StatusChip from '../components/StatusChip'
+import { isAtRisk } from '../utils/risk'
 
 const ROLE_STYLE = {
   admin:   { bg: '#EDE9FE', color: '#5B21B6', label: 'Admin',   blurb: 'Full platform access, including deletions and people management.' },
@@ -34,10 +36,10 @@ const ROLE_STYLE = {
 
 const initials = (name = '') => name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 
-function Detail({ icon: Icon, label, value, mono }) {
+function Detail({ icon: DetailIcon, label, value, mono }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25, py: 0.85 }}>
-      <Icon sx={{ fontSize: 17, color: 'text.secondary', mt: 0.2, flexShrink: 0 }} />
+      <DetailIcon sx={{ fontSize: 17, color: 'text.secondary', mt: 0.2, flexShrink: 0 }} />
       <Box sx={{ minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
           {label}
@@ -125,6 +127,9 @@ export default function Profile() {
                 value={user.joined_date ? new Date(user.joined_date).toLocaleDateString() : null} />
               <Detail icon={BadgeIcon} label="Department" value={user.department} />
 
+              {/* Administrators are not allocated to project work, so a
+                  capacity figure would be meaningless on their profile. */}
+              {user.role !== 'admin' && (<>
               <Divider sx={{ my: 2 }} />
 
               <Box>
@@ -161,6 +166,7 @@ export default function Profile() {
                   </Box>
                 </>
               )}
+              </>)}
             </Box>
           </Paper>
         </Grid>
@@ -173,8 +179,47 @@ export default function Profile() {
             <Typography variant="body2" color="text.secondary">{role.blurb}</Typography>
           </Paper>
 
-          {/* Projects managed (managers/admins) */}
-          {(user.role === 'manager' || user.role === 'admin') && (
+          {/* An administrator's page reflects the platform, not a portfolio. */}
+          {user.role === 'admin' && (
+            <Paper sx={{ p: 3, mb: 2.5 }}>
+              <Typography fontWeight={700} sx={{ mb: 0.5 }}>Platform overview</Typography>
+              <Typography variant="caption" sx={{ display: 'block', mb: 2 }}>
+                Administrators oversee the system. Projects, budgets and
+                assignments belong to project managers.
+              </Typography>
+              <Box sx={{ display: 'grid', gap: 2,
+                gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' } }}>
+                {[
+                  ['Projects', projects.length],
+                  ['Deliverables', deliverables.length],
+                  ['At risk', projects.filter(isAtRisk).length],
+                  ['Managers', new Set(projects.map(p => p.manager).filter(Boolean)).size],
+                ].map(([label, value]) => (
+                  <Box key={label}>
+                    <Typography sx={{ fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.1 }}>
+                      {loading ? '—' : value}
+                    </Typography>
+                    <Typography variant="caption">{label}</Typography>
+                  </Box>
+                ))}
+              </Box>
+              <Divider sx={{ my: 2.5 }} />
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Button size="small" variant="outlined" onClick={() => navigate('/activity')}>
+                  Activity log
+                </Button>
+                <Button size="small" variant="outlined" onClick={() => navigate('/support')}>
+                  Support queue
+                </Button>
+                <Button size="small" variant="outlined" onClick={() => navigate('/resources')}>
+                  Manage people
+                </Button>
+              </Box>
+            </Paper>
+          )}
+
+          {/* Projects managed — a manager's own portfolio */}
+          {user.role === 'manager' && (
             <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', mb: 2.5 }}>
               <Box sx={{ px: 3, py: 2 }}>
                 <Typography fontWeight={700}>Projects I manage ({myProjects.length})</Typography>
@@ -220,8 +265,9 @@ export default function Profile() {
             </Paper>
           )}
 
-          {/* My deliverables */}
-          <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+          {/* My deliverables — administrators are not assigned work */}
+          {user.role !== 'admin' && (
+          <Paper sx={{ overflow: 'hidden' }}>
             <Box sx={{ px: 3, py: 2 }}>
               <Typography fontWeight={700}>My deliverables ({myDeliverables.length})</Typography>
             </Box>
@@ -265,6 +311,7 @@ export default function Profile() {
               </Table>
             </TableContainer>
           </Paper>
+          )}
         </Grid>
       </Grid>
     </Box>

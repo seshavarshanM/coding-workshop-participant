@@ -35,7 +35,9 @@ import { isBlocked, blockReason } from '../utils/dependencies'
 import StatusChip from '../components/StatusChip'
 import PageHeader from '../components/PageHeader'
 import MetricCard from '../components/MetricCard'
-import { palette, shadow } from '../theme/tokens'
+import BudgetChart from '../components/BudgetChart'
+import DeliveryDonut from '../components/DeliveryDonut'
+import { palette } from '../theme/tokens'
 
 const money = n => `$${Number(n || 0).toLocaleString()}`
 const initials = (n = '') => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -186,6 +188,7 @@ export default function Dashboard() {
   const { user } = useAuth()
   const [projects, setProjects] = useState([])
   const [budget, setBudget] = useState({ total_planned: 0, total_actual: 0 })
+  const [budgetEntries, setBudgetEntries] = useState([])
   const [deliverables, setDeliverables] = useState([])
   const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(true)
@@ -197,7 +200,10 @@ export default function Dashboard() {
       deliverableService.getAll(), peopleService.getAll(),
     ])
       .then(([p, b, d, r]) => {
-        setProjects(p); if (b?.summary) setBudget(b.summary); setDeliverables(d); setPeople(r)
+        setProjects(p)
+        if (b?.summary) setBudget(b.summary)
+        setBudgetEntries(b?.entries || [])
+        setDeliverables(d); setPeople(r)
       })
       .catch(e => setError(e?.response?.data?.message || e.message))
       .finally(() => setLoading(false))
@@ -356,6 +362,35 @@ export default function Dashboard() {
             description={`${atRiskCount} at risk · ${blockedCount} blocked`}>
             <AttentionList projects={scope} deliverables={scopedDeliverables}
               navigate={navigate} loading={loading} />
+          </SectionCard>
+        </Grid>
+
+        {/* Two questions the numbers alone answer poorly: is spend tracking to
+            plan, and how much of the work is actually done. */}
+        <Grid item xs={12} lg={7}>
+          <SectionCard title="Spend against plan"
+            description="Actual spend compared with what was budgeted"
+            action={<Button size="small" endIcon={<ArrowForwardIcon />}
+              onClick={() => navigate('/budget')}>Budget</Button>}>
+            {loading
+              ? <Box sx={{ p: 2.5 }}>{[1,2,3].map(i => <Skeleton key={i} height={38} />)}</Box>
+              : <BudgetChart projects={scope} entries={budgetEntries} />}
+          </SectionCard>
+        </Grid>
+
+        <Grid item xs={12} lg={5}>
+          <SectionCard title="Delivery status"
+            description="Where the work stands across these projects"
+            action={<Button size="small" endIcon={<ArrowForwardIcon />}
+              onClick={() => navigate('/deliverables')}>Deliverables</Button>}>
+            {loading
+              ? <Box sx={{ p: 2.5 }}><Skeleton variant="circular" width={132} height={132} /></Box>
+              : <DeliveryDonut
+                  deliverables={scopedDeliverables}
+                  blockedIds={new Set(
+                    scopedDeliverables.filter(d => isBlocked(d, deliverables)).map(d => d.id)
+                  )}
+                />}
           </SectionCard>
         </Grid>
       </Grid>

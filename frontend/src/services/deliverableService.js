@@ -21,4 +21,8 @@ export const deliverableService = {
   // Progress timeline — who moved the work, how far, and why.
   updates:    (id)       => api.get(`${BASE}/${id}/updates`).then(r => Array.isArray(r.data) ? r.data : []),
   postUpdate: (id, note) => api.post(`${BASE}/${id}/updates`, { note }).then(r => r.data),
+
+  // What has happened that this person should know about — derived from the
+  // timeline, scoped by role on the server.
+  notifications: () => api.get(`${BASE}/notifications`).then(r => Array.isArray(r.data) ? r.data : []),
 }

@@ -47,6 +47,18 @@ const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        // Nothing may be wider than the screen. MUI's Grid deliberately
+        // overhangs its container by the gutter width, which is invisible on a
+        // desktop but spills off the side of a phone. Guarding at the root is
+        // more reliable than correcting each layout that uses it.
+        'html, body, #root': {
+          maxWidth: '100%',
+          overflowX: 'hidden',
+        },
+        '*, *::before, *::after': { boxSizing: 'border-box' },
+        // Long unbroken strings (emails, IDs) wrap rather than widening a card.
+        // Scoped to headings and body copy so table cells keep their own rules.
+        'h1, h2, h3, h4, h5, h6, p': { overflowWrap: 'break-word' },
         body: {
           backgroundColor: palette.canvas,
           WebkitFontSmoothing: 'antialiased',
@@ -111,6 +123,25 @@ const theme = createTheme({
           },
         },
       },
+    },
+
+    // A wide table should scroll inside its own card rather than pushing
+    // the whole page sideways on a narrow screen.
+    MuiTableContainer: {
+      styleOverrides: {
+        root: {
+          maxWidth: '100%',
+          overflowX: 'auto',
+          // Momentum scrolling so a wide table feels native on touch
+          WebkitOverflowScrolling: 'touch',
+        },
+      },
+    },
+
+    // A table keeps a workable width and scrolls inside its container rather
+    // than compressing columns until the text breaks one letter per line.
+    MuiTable: {
+      styleOverrides: { root: { minWidth: 560 } },
     },
 
     MuiTableCell: {

@@ -30,7 +30,15 @@ HEADERS = {
 }
 
 
-def respond(status, body):
+def respond(status, body=None):
+    """
+    Build an HTTP response.
+
+    204 carries no body by definition, so anything passed with it is dropped
+    rather than sent — some clients reject a 204 that has content.
+    """
+    if status == 204:
+        return {'statusCode': 204, 'headers': HEADERS, 'body': ''}
     return {'statusCode': status, 'headers': HEADERS, 'body': json.dumps(body, default=str)}
 
 
@@ -52,12 +60,9 @@ def _bearer_token(event):
     the transport is used.
     """
     headers = event.get('headers') or {}
-    # TEMPORARY DIAGNOSTIC — shows exactly which headers reach the function.
-    print(f"AUTH_DEBUG headers_received={sorted(headers.keys())}")
     # Header names arrive with inconsistent casing across API Gateway,
     # Function URLs and the local proxy — normalise before reading.
     lower = {str(k).lower(): v for k, v in headers.items()}
-    print(f"AUTH_DEBUG has_authorization={'authorization' in lower} has_x_auth_token={'x-auth-token' in lower}")
 
     raw = lower.get('authorization') or ''
     if raw.lower().startswith('bearer '):

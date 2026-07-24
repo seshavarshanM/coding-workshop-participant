@@ -112,7 +112,10 @@ export default function ProjectReport() {
       <Box sx={{
         bgcolor: '#fff', border: `1px solid ${palette.border}`, borderRadius: 2,
         p: { xs: 3, md: 5 }, maxWidth: 900, mx: 'auto',
-        '@media print': { border: 'none', p: 0, maxWidth: 'none' },
+        '@media print': {
+          border: 'none', borderRadius: 0, p: 0,
+          maxWidth: 'none', width: '100%', margin: 0,
+        },
       }}>
         {/* Masthead */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',

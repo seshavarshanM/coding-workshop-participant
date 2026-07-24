@@ -28,7 +28,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Grid from '@mui/material/Grid'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
-import DeleteIcon from '@mui/icons-material/Delete'
+import ArchiveIcon from '@mui/icons-material/Inventory2Rounded'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import SearchIcon from '@mui/icons-material/Search'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -39,7 +39,7 @@ import ReportProblemIcon from '@mui/icons-material/ReportProblem'
 import { projectService } from '../services/projectService'
 import { peopleService } from '../services/peopleService'
 import { useAuth } from '../context/AuthContext'
-import { can, canEditProject, canDeleteProject, ADMIN_READONLY_NOTE } from '../utils/permissions'
+import { can, canEditProject, canArchiveProject, ADMIN_READONLY_NOTE } from '../utils/permissions'
 import { isAtRisk, riskReason } from '../utils/risk'
 import StatusChip from '../components/StatusChip'
 import PageHeader from '../components/PageHeader'
@@ -167,7 +167,7 @@ export default function Projects() {
   const handleDelete = async () => {
     try {
       await projectService.remove(delConfirm.id)
-      setSnack({ open: true, msg: 'Project deleted', sev: 'success' })
+      setSnack({ open: true, msg: 'Project retired — the record is kept in the activity log', sev: 'success' })
       setDelConfirm(null)
       load()
     } catch (e) {
@@ -300,8 +300,12 @@ export default function Projects() {
                         {canEditProject(user, p) && (
                           <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(p)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                         )}
-                        {canDeleteProject(user) && (
-                          <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDelConfirm(p)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                        {canArchiveProject(user, p) && (
+                          <Tooltip title="Retire project">
+                            <IconButton size="small" color="error" onClick={() => setDelConfirm(p)}>
+                              <ArchiveIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         )}
                       </TableCell>
                     </TableRow>
@@ -397,16 +401,21 @@ export default function Projects() {
 
       {/* Delete confirm */}
       <Dialog open={!!delConfirm} onClose={() => setDelConfirm(null)} maxWidth="xs" fullWidth>
-        <DialogTitle fontWeight={700}>Delete project?</DialogTitle>
+        <DialogTitle>Retire this project?</DialogTitle>
         <DialogContent>
-          <Typography>
-            "{delConfirm?.name}" will be permanently deleted. This cannot be undone.
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            <strong>{delConfirm?.name}</strong> will be removed from the active list.
           </Typography>
+          <Alert severity="info">
+            The record is kept, marked with your name and the date. A project that
+            consumed budget and people stays part of the organisation's history —
+            an administrator can erase it permanently if that is ever required.
+          </Alert>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={() => setDelConfirm(null)} sx={{ textTransform: 'none' }}>Cancel</Button>
-          <Button variant="contained" color="error" onClick={handleDelete} sx={{ textTransform: 'none' }}>
-            Delete
+          <Button variant="contained" color="error" onClick={handleDelete}>
+            Retire project
           </Button>
         </DialogActions>
       </Dialog>

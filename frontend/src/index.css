@@ -67,18 +67,45 @@ button:focus-visible {
   }
 }
 
-/* Print: the app chrome is for working in, the report is for handing over. */
+
+/* ── Print ─────────────────────────────────────────────────────────────────
+   The application chrome is for working in; a printed report is for handing
+   over. Everything that frames the app is removed so the document owns the
+   page, and rows are kept from splitting across a page break.
+   ------------------------------------------------------------------------ */
 @media print {
   .no-print,
-  nav, header, aside,
+  .app-chrome,
   .MuiDrawer-root,
-  .MuiAppBar-root { display: none !important; }
+  .MuiAppBar-root,
+  nav, header, aside { display: none !important; }
 
-  body { background: #fff !important; }
-  main { padding: 0 !important; max-width: none !important; }
+  html, body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
 
-  /* Keep tables and sections from splitting across pages mid-row */
-  tr, .MuiTableRow-root { break-inside: avoid; }
+  /* Reclaim the space the sidebar occupied */
+  .app-main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+    animation: none !important;
+  }
 
-  a[href]:after { content: none !important; }
+  /* Tables print in full rather than scrolling inside a box */
+  .MuiTableContainer-root { overflow: visible !important; }
+  .MuiTable-root { min-width: 0 !important; width: 100% !important; }
+
+  tr, .MuiTableRow-root,
+  .MuiPaper-root { break-inside: avoid; }
+
+  /* Borders and tints survive the print pipeline */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  a[href]::after { content: none !important; }
+
+  @page { margin: 14mm; }
 }

@@ -30,7 +30,15 @@ HEADERS = {
 }
 
 
-def respond(status, body):
+def respond(status, body=None):
+    """
+    Build an HTTP response.
+
+    204 carries no body by definition, so anything passed with it is dropped
+    rather than sent — some clients reject a 204 that has content.
+    """
+    if status == 204:
+        return {'statusCode': 204, 'headers': HEADERS, 'body': ''}
     return {'statusCode': status, 'headers': HEADERS, 'body': json.dumps(body, default=str)}
 
 

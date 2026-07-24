@@ -23,6 +23,8 @@ import DialogActions from '@mui/material/DialogActions'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import Chip from '@mui/material/Chip'
+import InputAdornment from '@mui/material/InputAdornment'
+import SearchIcon from '@mui/icons-material/SearchRounded'
 import Skeleton from '@mui/material/Skeleton'
 import Tooltip from '@mui/material/Tooltip'
 import LinearProgress from '@mui/material/LinearProgress'
@@ -34,7 +36,7 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import { budgetService } from '../services/budgetService'
 import PageHeader from '../components/PageHeader'
 import ProjectGroupCard from '../components/ProjectGroupCard'
-import { statusToken, palette } from '../theme/tokens'
+import { statusToken } from '../theme/tokens'
 import { useAuth } from '../context/AuthContext'
 import { can, canEditBudgetEntry, canDeleteBudgetEntry, ADMIN_READONLY_NOTE } from '../utils/permissions'
 import { projectService } from '../services/projectService'
@@ -48,7 +50,7 @@ const EMPTY = {
   description: '', planned_amount: '', actual_amount: '', entry_date: ''
 }
 
-function SummaryCard({ title, value, sub, color, bg }) {
+function SummaryCard({ title, value, sub, color }) {
   return (
     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
       <Typography variant="caption" color="text.secondary" fontWeight={600}>{title}</Typography>
@@ -64,6 +66,7 @@ export default function Budget() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterProject, setFilterProject] = useState('')
+  const [search, setSearch] = useState('')
   const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY })
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -178,8 +181,16 @@ export default function Budget() {
 
   // Entries grouped under their project, with plan-vs-actual per project.
   const groupedByProject = (() => {
+    const term = search.trim().toLowerCase()
+    const matches = e =>
+      !term ||
+      (e.category || '').toLowerCase().includes(term) ||
+      (e.description || '').toLowerCase().includes(term) ||
+      (e.project_name || '').toLowerCase().includes(term) ||
+      (e.proposed_by || '').toLowerCase().includes(term)
+
     const map = new Map()
-    for (const e of entries) {
+    for (const e of entries.filter(matches)) {
       const key = e.project_id || 'unassigned'
       if (!map.has(key)) {
         const proj = projects.find(p => p.id === e.project_id)
@@ -258,7 +269,17 @@ export default function Budget() {
       </Grid>
 
       {/* Filter */}
-      <Box sx={{ mb: 2 }}>
+      <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+        <TextField
+          size="small"
+          placeholder="Search category, description, project…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+          }}
+          sx={{ minWidth: 280 }}
+        />
         <FormControl size="small" sx={{ minWidth: 220 }}>
           <InputLabel>Project</InputLabel>
           <Select label="Project" value={filterProject} onChange={e => setFilterProject(e.target.value)}>
@@ -330,7 +351,9 @@ export default function Budget() {
                         <TableCell>
                           <Typography variant="body2" color="text.secondary">{e.description || '—'}</Typography>
                         </TableCell>
-                        <TableCell><Typography variant="body2">{e.proposed_by || '—'}</Typography></TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{e.proposed_by || '—'}</Typography>
+                        </TableCell>
                         <TableCell>
                           <Typography variant="body2" color="text.secondary">
                             {e.entry_date ? new Date(e.entry_date).toLocaleDateString() : '—'}

@@ -26,11 +26,25 @@ def get_path(event):
     return event.get('path') or event.get('rawPath') or ''
 
 
+# Sub-resources and collection actions that appear in a path but are never an id.
+PATH_ACTIONS = {'restore', 'archived', 'cleanup-demo', 'report'}
+
+
 def get_id(event):
+    """
+    The project id from the path.
+
+    Paths carry actions as well as ids — /projects/{id}/restore, or
+    /projects/archived with no id at all — so taking the last segment would
+    return the action. Known actions are removed before reading the id.
+    """
     pp = event.get('pathParameters') or {}
     if pp.get('id'):
         return pp['id']
-    parts = [p for p in get_path(event).split('/') if p and p not in ('api', 'projects')]
+    parts = [
+        p for p in get_path(event).split('/')
+        if p and p not in ('api', 'projects') and p not in PATH_ACTIONS
+    ]
     return parts[-1] if parts else None
 
 
@@ -50,9 +64,19 @@ def init_db():
             completion_percentage INTEGER       DEFAULT 0,
             priority              VARCHAR(50)  DEFAULT 'medium',
             created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-            updated_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+            updated_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+            archived_at           TIMESTAMP,
+            archived_by           VARCHAR(255)
         )
     """)
+    for ddl in (
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_by VARCHAR(255)",
+    ):
+        try:
+            execute_query(ddl)
+        except Exception:
+            pass
 
 
 def fetch_project(project_id):
@@ -72,20 +96,26 @@ def handler(event, context):
         qp = event.get('queryStringParameters') or {}
         body = json.loads(event['body']) if event.get('body') else {}
 
+        # ── GET /api/projects/archived — retired projects ──────────────
+        if method == 'GET' and get_path(event).rstrip('/').endswith('/archived'):
+            return respond(200, execute_query(
+                "SELECT * FROM projects WHERE archived_at IS NOT NULL"
+                " ORDER BY archived_at DESC"))
+
         # ── READ: any authenticated user ──────────────────────────────
         if method == 'GET':
             if project_id:
                 project = fetch_project(project_id)
                 return respond(200, project) if project else respond(404, {'message': 'Project not found'})
 
-            conds, params = [], []
+            conds, params = ["archived_at IS NULL"], []
             if qp.get('status'):
                 conds.append("status = %s")
                 params.append(qp['status'])
             if qp.get('search'):
                 conds.append("(name ILIKE %s OR description ILIKE %s)")
                 params += [f"%{qp['search']}%", f"%{qp['search']}%"]
-            where = f"WHERE {' AND '.join(conds)}" if conds else ""
+            where = f"WHERE {' AND '.join(conds)}"
             return respond(200, execute_query(
                 f"SELECT * FROM projects {where} ORDER BY created_at DESC", params or None))
 
@@ -162,6 +192,20 @@ def handler(event, context):
                 'projects_remaining': int(remaining[0]['n']) if remaining else 0,
             })
 
+        # ── Bring a retired project back ──────────────────────────────
+        if method == 'POST' and project_id and get_path(event).rstrip('/').endswith('/restore'):
+            project = fetch_project(project_id)
+            if not project:
+                return respond(404, {'message': 'Project not found'})
+            require_project_owner(user, project, 'restore this project')
+            execute_query(
+                "UPDATE projects SET archived_at = NULL, archived_by = NULL,"
+                " updated_at = CURRENT_TIMESTAMP WHERE id = %s", (project_id,))
+            audit.record(user, 'update', 'project', project_id,
+                         project.get('name', ''), project.get('name', ''),
+                         'Restored from the archive')
+            return respond(200, {'message': 'Project restored'})
+
         # ── CREATE: managers only; they own what they create ──────────
         if method == 'POST':
             deny_admin_business_action(user, 'create projects')
@@ -218,17 +262,28 @@ def handler(event, context):
                          project.get('name', ''), project.get('name', ''))
             return respond(200, rows[0] if rows else {})
 
-        # ── DELETE: admin only (compliance action) ────────────────────
+        # ── DELETE — retire a project ─────────────────────────────────
+        # A project's lifecycle belongs to the manager who owns it. Retiring is
+        # part of running the work, so it sits with them.
+        #
+        # Nothing is erased. A project that consumed budget and people is part
+        # of the organisation's record, and removing that would lose history the
+        # audit trail exists to preserve. There is deliberately no purge path.
         if method == 'DELETE' and project_id:
-            require_role(user, 'admin')
             project = fetch_project(project_id)
             if not project:
                 return respond(404, {'message': 'Project not found'})
-            execute_query("DELETE FROM projects WHERE id = %s", (project_id,))
-            audit.record(user, 'delete', 'project', project_id,
+
+            require_project_owner(user, project, 'retire this project')
+
+            execute_query(
+                "UPDATE projects SET archived_at = CURRENT_TIMESTAMP, archived_by = %s,"
+                " updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (user['name'], project_id))
+            audit.record(user, 'archive', 'project', project_id,
                          project.get('name', ''), project.get('name', ''),
-                         'Compliance deletion by system administrator')
-            return respond(200, {'message': 'Project deleted'})
+                         f"Retired by {user['name']} ({user.get('employee_id','')})")
+            return respond(204)
 
         return respond(405, {'message': 'Method not allowed'})
 

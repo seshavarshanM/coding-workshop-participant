@@ -26,6 +26,8 @@ import Skeleton from '@mui/material/Skeleton'
 import Grid from '@mui/material/Grid'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
+import SearchIcon from '@mui/icons-material/SearchRounded'
+import InputAdornment from '@mui/material/InputAdornment'
 import Divider from '@mui/material/Divider'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
@@ -42,7 +44,7 @@ import StatusChip from '../components/StatusChip'
 import PageHeader from '../components/PageHeader'
 import ProjectGroupCard from '../components/ProjectGroupCard'
 import ProgressTimeline from '../components/ProgressTimeline'
-import { statusToken, palette } from '../theme/tokens'
+import { statusToken } from '../theme/tokens'
 
 const EMPTY = {
   name: '', description: '', project_id: '', project_name: '',
@@ -56,6 +58,7 @@ export default function Deliverables() {
   const [loading, setLoading] = useState(true)
   const [filterProject, setFilterProject] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [search, setSearch] = useState('')
   const [dialog, setDialog] = useState({ open: false, mode: 'create', data: EMPTY, limited: false })
   const [delConfirm, setDelConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -80,8 +83,16 @@ export default function Deliverables() {
   // Valid predecessors: same project, not itself, and no circular chains.
   // Group work under its project — the unit people actually think in.
   const groupedByProject = (() => {
+    const term = search.trim().toLowerCase()
+    const matches = d =>
+      !term ||
+      (d.name || '').toLowerCase().includes(term) ||
+      (d.description || '').toLowerCase().includes(term) ||
+      (d.assigned_to || '').toLowerCase().includes(term) ||
+      (d.project_name || '').toLowerCase().includes(term)
+
     const map = new Map()
-    for (const d of items) {
+    for (const d of items.filter(matches)) {
       const key = d.project_id || 'unassigned'
       if (!map.has(key)) {
         const proj = projects.find(p => p.id === d.project_id)
@@ -301,6 +312,16 @@ export default function Deliverables() {
       )}
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+        <TextField
+          size="small"
+          placeholder="Search deliverables, people…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+          }}
+          sx={{ minWidth: 260 }}
+        />
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Project</InputLabel>
           <Select label="Project" value={filterProject} onChange={e => setFilterProject(e.target.value)}>
@@ -401,7 +422,9 @@ export default function Deliverables() {
                           )}
                         </Box>
                       </TableCell>
-                      <TableCell><Typography variant="body2">{d.assigned_to || '—'}</Typography></TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{d.assigned_to || '—'}</Typography>
+                      </TableCell>
                       <TableCell>
                         <Typography variant="body2" color="text.secondary">
                           {d.due_date ? new Date(d.due_date).toLocaleDateString() : '—'}
@@ -554,11 +577,14 @@ export default function Deliverables() {
             {progressMoved && (
               <Grid item xs={12}>
                 <TextField
-                  fullWidth multiline rows={2} required
+                  fullWidth multiline rows={2} required autoFocus
                   label="What changed?"
                   value={note} onChange={e => setNote(e.target.value)}
                   placeholder="e.g. Endpoints implemented, starting integration tests"
-                  helperText="A note is required when progress moves — it is what makes this history useful later."
+                  error={!note.trim()}
+                  helperText={note.trim()
+                    ? 'This will be added to the deliverable history.'
+                    : 'Required — describe what changed before saving.'}
                 />
               </Grid>
             )}
@@ -576,10 +602,19 @@ export default function Deliverables() {
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={closeDialog} sx={{ textTransform: 'none' }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving || !isValid}
-            sx={{ textTransform: 'none', fontWeight: 600 }}>
-            {saving ? 'Saving…' : dialog.mode === 'create' ? 'Create' : 'Save'}
-          </Button>
+          <Tooltip title={
+            !isValid && progressMoved && !note.trim()
+              ? 'Add a note describing what changed'
+              : !isValid
+              ? 'Some required fields are missing'
+              : ''
+          }>
+            <span>
+              <Button variant="contained" onClick={handleSave} disabled={saving || !isValid}>
+                {saving ? 'Saving…' : dialog.mode === 'create' ? 'Create' : 'Save'}
+              </Button>
+            </span>
+          </Tooltip>
         </DialogActions>
       </Dialog>
 
